@@ -36,12 +36,12 @@ pub trait RxpoTxpo {
 
 /// Lift the implementations of [`RxpoTxpo`] from four-tuples of
 /// [`OptionalPadNum`]s to the corresponding [`Pads`] types.
-impl<S, I, RX, TX, RTS, CTS> RxpoTxpo for Pads<S, I, RX, TX, RTS, CTS>
+impl<S, I, RX, TX, RTS, CTS> RxpoTxpo for Pads<S, I, FullDuplex<RX, TX>, RTS, CTS>
 where
     S: Sercom,
     I: IoSet,
-    RX: OptionalPad,
-    TX: OptionalPad,
+    RX: SomePad,
+    TX: SomePad,
     RTS: OptionalPad,
     CTS: OptionalPad,
     (RX::PadNum, TX::PadNum, RTS::PadNum, CTS::PadNum): RxpoTxpo,
@@ -153,6 +153,19 @@ macro_rules! padnum_permutations {
 
 padnum_permutations!( () [NoneT Pad0 Pad1 Pad2 Pad3] );
 
+pub struct Empty {}
+pub struct RxSimplex<RX: SomePad> { receive: RX }
+pub struct TxSimplex<TX: SomePad> { transmit: TX }
+pub struct HalfDuplex<IO: SomePad> { io: IO }
+pub struct FullDuplex<RX: SomePad, TX: SomePad> { receive: RX, transmit: TX }
+
+pub trait IoPads { type RX : OptionalPad; type TX : OptionalPad; }
+impl IoPads for Empty { type RX = NoneT; type TX = NoneT; }
+impl<RX: SomePad> IoPads for RxSimplex<RX> { type RX = RX; type TX = NoneT; }
+impl<TX: SomePad> IoPads for TxSimplex<TX> { type RX = NoneT; type TX = TX; }
+impl<IO: SomePad> IoPads for HalfDuplex<IO> { type RX = IO; type TX = IO; }
+impl<RX: SomePad, TX: SomePad> IoPads for FullDuplex<RX, TX> { type RX = RX; type TX = TX; }
+
 //=============================================================================
 // Pads
 //=============================================================================
@@ -161,82 +174,47 @@ padnum_permutations!( () [NoneT Pad0 Pad1 Pad2 Pad3] );
 ///
 /// See the [module-level](crate::sercom::uart) documentation for more
 /// details on specifying a `Pads` type and creating instances.
-pub struct Pads<S, I, RX = NoneT, TX = NoneT, RTS = NoneT, CTS = NoneT>
+pub struct Pads<S, I, P = Empty, RTS = NoneT, CTS = NoneT>
 where
     S: Sercom,
     I: IoSet,
-    RX: OptionalPad,
-    TX: OptionalPad,
+    P: IoPads,
     RTS: OptionalPad,
     CTS: OptionalPad,
 {
     sercom: PhantomData<S>,
     ioset: PhantomData<I>,
-    receive: RX,
-    transmit: TX,
+    io: P,
     ready_to_send: RTS,
     clear_to_send: CTS,
 }
+
 
 impl<S: Sercom, I: IoSet> Default for Pads<S, I> {
     fn default() -> Self {
         Self {
             sercom: PhantomData,
             ioset: PhantomData,
-            receive: NoneT,
-            transmit: NoneT,
+            io: Empty {},
             ready_to_send: NoneT,
             clear_to_send: NoneT,
         }
     }
 }
 
-impl<S, I, RX, TX, RTS, CTS> Pads<S, I, RX, TX, RTS, CTS>
+
+impl<S, I, P, RTS, CTS> Pads<S, I, P, RTS, CTS>
 where
     S: Sercom,
     I: IoSet,
-    RX: OptionalPad,
-    TX: OptionalPad,
+    P: IoPads,
     RTS: OptionalPad,
     CTS: OptionalPad,
 {
-    /// Set the `RX` [`Pad`]
-    #[inline]
-    pub fn rx<Id>(self, pin: impl AnyPin<Id = Id>) -> Pads<S, I, Pad<S, Id>, TX, RTS, CTS>
-    where
-        Id: GetPad<S>,
-        Pad<S, Id>: InIoSet<I>,
-    {
-        Pads {
-            sercom: self.sercom,
-            ioset: self.ioset,
-            receive: pin.into().into_mode(),
-            transmit: self.transmit,
-            ready_to_send: self.ready_to_send,
-            clear_to_send: self.clear_to_send,
-        }
-    }
-
-    /// Set the `TX` [`Pad`]
-    #[inline]
-    pub fn tx<Id>(self, pin: impl AnyPin<Id = Id>) -> Pads<S, I, RX, Pad<S, Id>, RTS, CTS>
-    where
-        Id: GetPad<S>,
-        Pad<S, Id>: InIoSet<I>,
-    {
-        Pads {
-            sercom: self.sercom,
-            ioset: self.ioset,
-            receive: self.receive,
-            transmit: pin.into().into_mode(),
-            ready_to_send: self.ready_to_send,
-            clear_to_send: self.clear_to_send,
-        }
-    }
 
     /// Set the `RTS` [`Pad`], which is always [`Pad2`]
     #[inline]
-    pub fn rts<Id>(self, pin: impl AnyPin<Id = Id>) -> Pads<S, I, RX, TX, Pad<S, Id>, CTS>
+    pub fn rts<Id>(self, pin: impl AnyPin<Id = Id>) -> Pads<S, I, P, Pad<S, Id>, CTS>
     where
         Id: GetPad<S>,
         Pad<S, Id>: InIoSet<I>,
@@ -244,8 +222,7 @@ where
         Pads {
             sercom: self.sercom,
             ioset: self.ioset,
-            receive: self.receive,
-            transmit: self.transmit,
+            io: self.io,
             ready_to_send: pin.into().into_mode(),
             clear_to_send: self.clear_to_send,
         }
@@ -253,7 +230,7 @@ where
 
     /// Set the `CTS` [`Pad`], which is always [`Pad3`]
     #[inline]
-    pub fn cts<Id>(self, pin: impl AnyPin<Id = Id>) -> Pads<S, I, RX, TX, RTS, Pad<S, Id>>
+    pub fn cts<Id>(self, pin: impl AnyPin<Id = Id>) -> Pads<S, I, P, RTS, Pad<S, Id>>
     where
         Id: GetPad<S>,
         Pad<S, Id>: InIoSet<I>,
@@ -261,24 +238,176 @@ where
         Pads {
             sercom: self.sercom,
             ioset: self.ioset,
-            receive: self.receive,
-            transmit: self.transmit,
+            io: self.io,
             ready_to_send: self.ready_to_send,
             clear_to_send: pin.into().into_mode(),
+        }
+    }
+}
+
+
+impl<S, I, RTS, CTS> Pads<S, I, Empty, RTS, CTS>
+where
+    S: Sercom,
+    I: IoSet,
+    RTS: OptionalPad,
+    CTS: OptionalPad,
+{
+    /// Set the `RX` [`Pad`]
+    #[inline]
+    pub fn rx<Id>(self, pin: impl AnyPin<Id = Id>) -> Pads<S, I, RxSimplex<Pad<S, Id>>, RTS, CTS>
+    where
+        Id: GetPad<S>,
+        Pad<S, Id>: InIoSet<I>,
+    {
+        Pads {
+            sercom: self.sercom,
+            ioset: self.ioset,
+            io: RxSimplex { receive: pin.into().into_mode() },
+            ready_to_send: self.ready_to_send,
+            clear_to_send: self.clear_to_send,
+        }
+    }
+
+    /// Set the `TX` [`Pad`]
+    #[inline]
+    pub fn tx<Id>(self, pin: impl AnyPin<Id = Id>) -> Pads<S, I, TxSimplex<Pad<S, Id>>, RTS, CTS>
+    where
+        Id: GetPad<S>,
+        Pad<S, Id>: InIoSet<I>,
+    {
+        Pads {
+            sercom: self.sercom,
+            ioset: self.ioset,
+            io: TxSimplex { transmit: pin.into().into_mode() },
+            ready_to_send: self.ready_to_send,
+            clear_to_send: self.clear_to_send,
         }
     }
 
     /// Consume the [`Pads`] and return each individual [`Pad`]
     #[inline]
-    pub fn free(self) -> (RX, TX, RTS, CTS) {
+    pub fn free(self) -> (RTS, CTS) {
         (
-            self.receive,
-            self.transmit,
+            self.ready_to_send,
+            self.clear_to_send,
+        )
+    }
+
+}
+
+
+impl<S, I, TX, RTS, CTS> Pads<S, I, TxSimplex<TX>, RTS, CTS>
+where
+    S: Sercom,
+    I: IoSet,
+    TX: SomePad,
+    RTS: OptionalPad,
+    CTS: OptionalPad,
+{
+    /// Set the `RX` [`Pad`]
+    #[inline]
+    pub fn rx<Id>(self, pin: impl AnyPin<Id = Id>) -> Pads<S, I, FullDuplex<Pad<S, Id>, TX>, RTS, CTS>
+    where
+        Id: GetPad<S>,
+        Pad<S, Id>: InIoSet<I>,
+    {
+        Pads {
+            sercom: self.sercom,
+            ioset: self.ioset,
+            io: FullDuplex { transmit: self.io.transmit, receive: pin.into().into_mode() },
+            ready_to_send: self.ready_to_send,
+            clear_to_send: self.clear_to_send,
+        }
+    }
+    /// Consume the [`Pads`] and return each individual [`Pad`]
+    #[inline]
+    pub fn free(self) -> (TX, RTS, CTS) {
+        (
+        	self.io.transmit,
+            self.ready_to_send,
+            self.clear_to_send,
+        )
+    }
+    
+}
+
+impl<S, I, RX, RTS, CTS> Pads<S, I, RxSimplex<RX>, RTS, CTS>
+where
+    S: Sercom,
+    I: IoSet,
+    RX: SomePad,
+    RTS: OptionalPad,
+    CTS: OptionalPad,
+{
+    /// Set the `RX` [`Pad`]
+    #[inline]
+    pub fn tx<Id>(self, pin: impl AnyPin<Id = Id>) -> Pads<S, I, FullDuplex<RX, Pad<S, Id>>, RTS, CTS>
+    where
+        Id: GetPad<S>,
+        Pad<S, Id>: InIoSet<I>,
+    {
+        Pads {
+            sercom: self.sercom,
+            ioset: self.ioset,
+            io: FullDuplex { transmit: pin.into().into_mode(), receive: self.io.receive },
+            ready_to_send: self.ready_to_send,
+            clear_to_send: self.clear_to_send,
+        }
+    }
+    /// Consume the [`Pads`] and return each individual [`Pad`]
+    #[inline]
+    pub fn free(self) -> (RX, RTS, CTS) {
+        (
+        	self.io.receive,
             self.ready_to_send,
             self.clear_to_send,
         )
     }
 }
+
+
+impl<S, I, RX, TX, RTS, CTS> Pads<S, I, FullDuplex<RX, TX>, RTS, CTS>
+where
+    S: Sercom,
+    I: IoSet,
+    RX: SomePad,
+    TX: SomePad,
+    RTS: OptionalPad,
+    CTS: OptionalPad,
+{
+    /// Consume the [`Pads`] and return each individual [`Pad`]
+    #[inline]
+    pub fn free(self) -> (RX, TX, RTS, CTS) {
+        (
+        	self.io.receive,
+        	self.io.transmit,
+            self.ready_to_send,
+            self.clear_to_send,
+        )
+    }
+}
+
+
+impl<S, I, IO, RTS, CTS> Pads<S, I, HalfDuplex<IO>, RTS, CTS>
+where
+    S: Sercom,
+    I: IoSet,
+    IO: SomePad,
+    RTS: OptionalPad,
+    CTS: OptionalPad,
+{
+    /// Consume the [`Pads`] and return each individual [`Pad`]
+    #[inline]
+    pub fn free(self) -> (IO, RTS, CTS) {
+        (
+        	self.io.io,
+            self.ready_to_send,
+            self.clear_to_send,
+        )
+    }
+}
+
 
 /// Define a set of [`Pads`] using [`PinId`]s instead of [`Pin`]s
 ///
@@ -297,7 +426,7 @@ where
 /// use atsamd_hal::sercom::pad::IoSet1;
 /// use atsamd_hal::typelevel::NoneT;
 ///
-/// pub type Pads = uart::PadsFromIds<Sercom0, IoSet1, PA09T, PA08>;
+/// pub type Pads = uart::PadsFromIds<Sercom0, IoSet1, PA09, PA08>;
 ///
 /// pub fn create_pads() -> Pads {
 ///     let peripherals = Peripherals::take().unwrap();
@@ -312,11 +441,28 @@ where
 pub type PadsFromIds<S, I, RX = NoneT, TX = NoneT, RTS = NoneT, CTS = NoneT> = Pads<
     S,
     I,
-    <RX as GetOptionalPad<S>>::Pad,
-    <TX as GetOptionalPad<S>>::Pad,
+    <(RX, TX) as IoMapType>::IoMapped,
     <RTS as GetOptionalPad<S>>::Pad,
     <CTS as GetOptionalPad<S>>::Pad,
 >;
+
+pub trait IoMapType { type IoMapped; }
+impl IoMapType for (NoneT, NoneT) { type IoMapped = Empty; }
+impl<RX : SomePad> IoMapType for (RX, NoneT) { type IoMapped = RxSimplex<RX>; }
+impl<TX : SomePad> IoMapType for (NoneT, TX) { type IoMapped = TxSimplex<TX>; }
+// not possible ->
+//impl<IO : SomePad> IoMapType for (IO, IO) { type IoMapped = HalfDuplex<IO>; }
+impl<RX : SomePad, TX : SomePad> IoMapType for (RX, TX) { type IoMapped = FullDuplex<RX, TX>; }
+
+
+pub type PadsHalfDuplexFromIds<S, I, IO, RTS = NoneT, CTS = NoneT> = Pads<
+    S,
+    I,
+    HalfDuplex<IO>,
+    <RTS as GetOptionalPad<S>>::Pad,
+    <CTS as GetOptionalPad<S>>::Pad,
+>;
+
 
 //=============================================================================
 // PadSet
@@ -347,30 +493,28 @@ pub trait PadSet: Sealed {
     type Cts: OptionalPad;
 }
 
-impl<S, I, RX, TX, RTS, CTS> Sealed for Pads<S, I, RX, TX, RTS, CTS>
+impl<S, I, P, RTS, CTS> Sealed for Pads<S, I, P, RTS, CTS>
 where
     S: Sercom,
     I: IoSet,
-    RX: OptionalPad,
-    TX: OptionalPad,
+    P: IoPads,
     RTS: OptionalPad,
     CTS: OptionalPad,
 {
 }
 
-impl<S, I, RX, TX, RTS, CTS> PadSet for Pads<S, I, RX, TX, RTS, CTS>
+impl<S, I, P, RTS, CTS> PadSet for Pads<S, I, P, RTS, CTS>
 where
     S: Sercom,
     I: IoSet,
-    RX: OptionalPad,
-    TX: OptionalPad,
+    P: IoPads,
     RTS: OptionalPad,
     CTS: OptionalPad,
 {
     type Sercom = S;
     type IoSet = I;
-    type Rx = RX;
-    type Tx = TX;
+    type Rx = P::RX;
+    type Tx = P::TX;
     type Rts = RTS;
     type Cts = CTS;
 }
@@ -390,7 +534,7 @@ pub trait ValidPads: PadSet + RxpoTxpo {
     type Capability: Capability;
 }
 
-impl<S, I, RX, RTS> ValidPads for Pads<S, I, RX, NoneT, RTS, NoneT>
+impl<S, I, RX, RTS> ValidPads for Pads<S, I, RxSimplex<RX>, RTS, NoneT>
 where
     S: Sercom,
     I: IoSet,
@@ -401,7 +545,7 @@ where
     type Capability = Rx;
 }
 
-impl<S, I, TX, CTS> ValidPads for Pads<S, I, NoneT, TX, NoneT, CTS>
+impl<S, I, TX, CTS> ValidPads for Pads<S, I, TxSimplex<TX>, NoneT, CTS>
 where
     S: Sercom,
     I: IoSet,
@@ -412,7 +556,7 @@ where
     type Capability = Tx;
 }
 
-impl<S, I, RX, TX, RTS, CTS> ValidPads for Pads<S, I, RX, TX, RTS, CTS>
+impl<S, I, RX, TX, RTS, CTS> ValidPads for Pads<S, I, FullDuplex<RX, TX>, RTS, CTS>
 where
     S: Sercom,
     I: IoSet,
@@ -436,3 +580,4 @@ where
 pub trait ValidConfig: AnyConfig {}
 
 impl<P: ValidPads, C: CharSize> ValidConfig for Config<P, C> {}
+

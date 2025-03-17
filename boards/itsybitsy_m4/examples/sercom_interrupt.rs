@@ -47,7 +47,7 @@ use bsp::hal::{
     time::Hertz,
 };
 
-type UartPads0 = uart::Pads<Sercom0, IoSet3, IoSet3Sercom0Pad2, IoSet3Sercom0Pad0>;
+type UartPads0 = uart::PadsFromIds<Sercom0, IoSet3, IoSet3Sercom0Pad2, IoSet3Sercom0Pad0>;
 type Uart0 = uart::Uart<uart::Config<UartPads0>, uart::Duplex>;
 
 /// Utility function for setting up SERCOM0 pins as an additional
