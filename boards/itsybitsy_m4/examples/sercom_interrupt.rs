@@ -29,7 +29,7 @@ use panic_halt as _;
 #[cfg(feature = "use_semihosting")]
 use panic_semihosting as _;
 
-use bsp::{entry, IoSet3Sercom0Pad0, IoSet3Sercom0Pad2};
+use bsp::{entry, IoSet3Sercom0Pad0};
 use core::cell::RefCell;
 use cortex_m::{interrupt::Mutex, peripheral::NVIC};
 
@@ -47,8 +47,8 @@ use bsp::hal::{
     time::Hertz,
 };
 
-type UartPads0 = uart::PadsFromIds<Sercom0, IoSet3, IoSet3Sercom0Pad2, IoSet3Sercom0Pad0>;
-type Uart0 = uart::Uart<uart::Config<UartPads0>, uart::Duplex>;
+type UartPads0 = uart::PadsFromIds<Sercom0, IoSet3, atsamd_hal::typelevel::NoneT, IoSet3Sercom0Pad0>;
+type Uart0 = uart::Uart<uart::Config<UartPads0>, uart::Tx>;
 
 /// Utility function for setting up SERCOM0 pins as an additional
 /// UART peripheral.
@@ -57,13 +57,12 @@ pub fn uart0(
     baud: impl Into<Hertz>,
     sercom0: pac::Sercom0,
     mclk: &mut pac::Mclk,
-    uart_rx: impl Into<IoSet3Sercom0Pad2>,
     uart_tx: impl Into<IoSet3Sercom0Pad0>,
 ) -> Uart0 {
     let gclk0 = clocks.gclk0();
     let clock = &clocks.sercom0_core(&gclk0).unwrap();
     let baud = baud.into();
-    let pads = uart::Pads::default().rx(uart_rx.into()).tx(uart_tx.into());
+    let pads = uart::Pads::default().tx(uart_tx.into());
     uart::Config::new(mclk, sercom0, pads, clock.freq())
         .baud(baud, BaudMode::Fractional(Oversampling::Bits16))
         .enable()
@@ -96,7 +95,6 @@ fn main() -> ! {
         115200.Hz(),
         dp.sercom0,
         &mut dp.mclk,
-        pins.a5,
         pins.a4,
     );
 

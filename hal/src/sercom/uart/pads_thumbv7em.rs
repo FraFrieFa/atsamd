@@ -50,6 +50,48 @@ where
     const TXPO: u8 = <(RX::PadNum, TX::PadNum, RTS::PadNum, CTS::PadNum)>::TXPO;
 }
 
+impl<S, I, RX, RTS, CTS> RxpoTxpo for Pads<S, I, RxSimplex<RX>, RTS, CTS>
+where
+    S: Sercom,
+    I: IoSet,
+    RX: SomePad,
+    RTS: OptionalPad,
+    CTS: OptionalPad,
+    (RX::PadNum, NoneT, RTS::PadNum, CTS::PadNum): RxpoTxpo,
+{
+    const RXPO: u8 = <(RX::PadNum, NoneT, RTS::PadNum, CTS::PadNum)>::RXPO;
+    const TXPO: u8 = <(RX::PadNum, NoneT, RTS::PadNum, CTS::PadNum)>::TXPO;
+}
+
+
+impl<S, I, TX, RTS, CTS> RxpoTxpo for Pads<S, I, TxSimplex<TX>, RTS, CTS>
+where
+    S: Sercom,
+    I: IoSet,
+    TX: SomePad,
+    RTS: OptionalPad,
+    CTS: OptionalPad,
+    (NoneT, TX::PadNum, RTS::PadNum, CTS::PadNum): RxpoTxpo,
+{
+    const RXPO: u8 = <(NoneT, TX::PadNum, RTS::PadNum, CTS::PadNum)>::RXPO;
+    const TXPO: u8 = <(NoneT, TX::PadNum, RTS::PadNum, CTS::PadNum)>::TXPO;
+}
+
+
+impl<S, I, IO, RTS, CTS> RxpoTxpo for Pads<S, I, HalfDuplex<IO>, RTS, CTS>
+where
+    S: Sercom,
+    I: IoSet,
+    IO: SomePad,
+    RTS: OptionalPad,
+    CTS: OptionalPad,
+    (IO::PadNum, IO::PadNum, RTS::PadNum, CTS::PadNum): RxpoTxpo,
+{
+    const RXPO: u8 = <(IO::PadNum, IO::PadNum, RTS::PadNum, CTS::PadNum)>::RXPO;
+    const TXPO: u8 = <(IO::PadNum, IO::PadNum, RTS::PadNum, CTS::PadNum)>::TXPO;
+}
+
+
 //=============================================================================
 // Implement RxpoTxpo
 //=============================================================================
@@ -184,7 +226,7 @@ where
 {
     sercom: PhantomData<S>,
     ioset: PhantomData<I>,
-    io: P,
+    io_pads: P,
     ready_to_send: RTS,
     clear_to_send: CTS,
 }
@@ -195,7 +237,7 @@ impl<S: Sercom, I: IoSet> Default for Pads<S, I> {
         Self {
             sercom: PhantomData,
             ioset: PhantomData,
-            io: Empty {},
+            io_pads: Empty {},
             ready_to_send: NoneT,
             clear_to_send: NoneT,
         }
@@ -222,7 +264,7 @@ where
         Pads {
             sercom: self.sercom,
             ioset: self.ioset,
-            io: self.io,
+            io_pads: self.io_pads,
             ready_to_send: pin.into().into_mode(),
             clear_to_send: self.clear_to_send,
         }
@@ -238,7 +280,7 @@ where
         Pads {
             sercom: self.sercom,
             ioset: self.ioset,
-            io: self.io,
+            io_pads: self.io_pads,
             ready_to_send: self.ready_to_send,
             clear_to_send: pin.into().into_mode(),
         }
@@ -263,7 +305,7 @@ where
         Pads {
             sercom: self.sercom,
             ioset: self.ioset,
-            io: RxSimplex { receive: pin.into().into_mode() },
+            io_pads: RxSimplex { receive: pin.into().into_mode() },
             ready_to_send: self.ready_to_send,
             clear_to_send: self.clear_to_send,
         }
@@ -279,7 +321,23 @@ where
         Pads {
             sercom: self.sercom,
             ioset: self.ioset,
-            io: TxSimplex { transmit: pin.into().into_mode() },
+            io_pads: TxSimplex { transmit: pin.into().into_mode() },
+            ready_to_send: self.ready_to_send,
+            clear_to_send: self.clear_to_send,
+        }
+    }
+
+    /// Set the 'RX' ['Pad'] and `TX` [`Pad`]
+    #[inline]
+    pub fn io<Id>(self, pin: impl AnyPin<Id = Id>) -> Pads<S, I, HalfDuplex<Pad<S, Id>>, RTS, CTS>
+    where
+        Id: GetPad<S>,
+        Pad<S, Id>: InIoSet<I>,
+    {
+        Pads {
+            sercom: self.sercom,
+            ioset: self.ioset,
+            io_pads: HalfDuplex { io: pin.into().into_mode() },
             ready_to_send: self.ready_to_send,
             clear_to_send: self.clear_to_send,
         }
@@ -315,7 +373,7 @@ where
         Pads {
             sercom: self.sercom,
             ioset: self.ioset,
-            io: FullDuplex { transmit: self.io.transmit, receive: pin.into().into_mode() },
+            io_pads: FullDuplex { transmit: self.io_pads.transmit, receive: pin.into().into_mode() },
             ready_to_send: self.ready_to_send,
             clear_to_send: self.clear_to_send,
         }
@@ -324,7 +382,7 @@ where
     #[inline]
     pub fn free(self) -> (TX, RTS, CTS) {
         (
-        	self.io.transmit,
+        	self.io_pads.transmit,
             self.ready_to_send,
             self.clear_to_send,
         )
@@ -350,7 +408,7 @@ where
         Pads {
             sercom: self.sercom,
             ioset: self.ioset,
-            io: FullDuplex { transmit: pin.into().into_mode(), receive: self.io.receive },
+            io_pads: FullDuplex { transmit: pin.into().into_mode(), receive: self.io_pads.receive },
             ready_to_send: self.ready_to_send,
             clear_to_send: self.clear_to_send,
         }
@@ -359,7 +417,7 @@ where
     #[inline]
     pub fn free(self) -> (RX, RTS, CTS) {
         (
-        	self.io.receive,
+        	self.io_pads.receive,
             self.ready_to_send,
             self.clear_to_send,
         )
@@ -380,8 +438,8 @@ where
     #[inline]
     pub fn free(self) -> (RX, TX, RTS, CTS) {
         (
-        	self.io.receive,
-        	self.io.transmit,
+        	self.io_pads.receive,
+        	self.io_pads.transmit,
             self.ready_to_send,
             self.clear_to_send,
         )
@@ -401,7 +459,7 @@ where
     #[inline]
     pub fn free(self) -> (IO, RTS, CTS) {
         (
-        	self.io.io,
+        	self.io_pads.io,
             self.ready_to_send,
             self.clear_to_send,
         )
@@ -562,6 +620,18 @@ where
     I: IoSet,
     RX: SomePad,
     TX: SomePad,
+    RTS: OptionalPad,
+    CTS: OptionalPad,
+    Self: PadSet + RxpoTxpo,
+{
+    type Capability = Duplex;
+}
+
+impl<S, I, IO, RTS, CTS> ValidPads for Pads<S, I, HalfDuplex<IO>, RTS, CTS>
+where
+    S: Sercom,
+    I: IoSet,
+    IO: SomePad,
     RTS: OptionalPad,
     CTS: OptionalPad,
     Self: PadSet + RxpoTxpo,
