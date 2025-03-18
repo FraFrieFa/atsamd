@@ -152,6 +152,33 @@ macro_rules! impl_rxpotxpo {
     };
 }
 
+
+trait Rxpo { const RXPO: u8; }
+impl Rxpo for NoneT { const RXPO: u8 = 0; }
+impl Rxpo for Pad0 { const RXPO: u8 = 0; }
+impl Rxpo for Pad1 { const RXPO: u8 = 1; }
+impl Rxpo for Pad2 { const RXPO: u8 = 2; }
+impl Rxpo for Pad3 { const RXPO: u8 = 3; }
+
+trait OptionalPad0 {}
+impl OptionalPad0 for NoneT {}
+impl OptionalPad0 for Pad0 {}
+
+trait Txpo { const TXPO: u8; }
+impl<TX: OptionalPad0> Txpo for (TX, NoneT, NoneT) { const TXPO: u8 = 0; }
+impl<TX: OptionalPad0> Txpo for (TX, Pad2, Pad3) { const TXPO: u8 = 2; }
+impl<TX: OptionalPad0> Txpo for (TX, Pad2, NoneT) { const TXPO: u8 = 3; }
+
+trait RxpoTxpo2 { const RXPO: u8; const TXPO: u8; }
+
+impl<TXPO: Txpo> RxpoTxpo2 for (Pad0, TXPO) { const RXPO: u8 = Pad0::RXPO; const TXPO: u8 = TXPO::TXPO; }
+impl<TX: OptionalPad0> RxpoTxpo2 for (Pad1, (TX, Pad2, Pad3)) { const RXPO: u8 = Pad1::RXPO; const TXPO: u8 = (TX, Pad2, Pad3)::TXPO; }
+impl<TX: OptionalPad0> RxpoTxpo2 for (Pad2, (TX, NoneT, NoneT)) { const RXPO: u8 = Pad2::RXPO; const TXPO: u8 = (TX, NoneT, NoneT)::TXPO; }
+impl<TX: OptionalPad0> RxpoTxpo2 for (Pad3, (TX, NoneT, NoneT)) { const RXPO: u8 = Pad3::RXPO; const TXPO: u8 = (TX, NoneT, NoneT)::TXPO; }
+impl<TX: OptionalPad0> RxpoTxpo2 for (Pad3, (TX, Pad2, NoneT)) { const RXPO: u8 = Pad3::RXPO; const TXPO: u8 = (TX, Pad2, NoneT)::TXPO; }
+
+
+
 /// Try to implement [`RxpoTxpo`] on all possible 4-tuple permutations of
 /// [`OptionalPadNum`]s.
 ///
