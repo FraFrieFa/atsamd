@@ -34,206 +34,166 @@ pub trait RxpoTxpo {
     const TXPO: u8;
 }
 
-/// Lift the implementations of [`RxpoTxpo`] from four-tuples of
-/// [`OptionalPadNum`]s to the corresponding [`Pads`] types.
+trait Rxpo {
+    const RXPO: u8;
+}
+impl Rxpo for NoneT {
+    const RXPO: u8 = 0;
+}
+impl Rxpo for Pad0 {
+    const RXPO: u8 = 0;
+}
+impl Rxpo for Pad1 {
+    const RXPO: u8 = 1;
+}
+impl Rxpo for Pad2 {
+    const RXPO: u8 = 2;
+}
+impl Rxpo for Pad3 {
+    const RXPO: u8 = 3;
+}
+
+trait OptionalPad0 {}
+impl OptionalPad0 for NoneT {}
+impl OptionalPad0 for Pad0 {}
+
+trait Txpo {
+    const TXPO: u8;
+}
+impl<TX: OptionalPad0> Txpo for (TX, NoneT, NoneT) {
+    const TXPO: u8 = 0;
+}
+impl<TX: OptionalPad0> Txpo for (TX, Pad2, Pad3) {
+    const TXPO: u8 = 2;
+}
+impl<TX: OptionalPad0> Txpo for (TX, Pad2, NoneT) {
+    const TXPO: u8 = 3;
+}
+
+trait NotPad0 {}
+impl NotPad0 for Pad1 {}
+impl NotPad0 for Pad2 {}
+impl NotPad0 for Pad3 {}
+
 impl<S, I, RX, TX, RTS, CTS> RxpoTxpo for Pads<S, I, FullDuplex<RX, TX>, RTS, CTS>
 where
     S: Sercom,
     I: IoSet,
-    RX: SomePad,
+    RX: SomePad<PadNum: Rxpo + NotPad0>,
     TX: SomePad,
+    (TX::PadNum, RTS::PadNum, CTS::PadNum): Txpo,
     RTS: OptionalPad,
     CTS: OptionalPad,
-    (RX::PadNum, TX::PadNum, RTS::PadNum, CTS::PadNum): RxpoTxpo,
 {
-    const RXPO: u8 = <(RX::PadNum, TX::PadNum, RTS::PadNum, CTS::PadNum)>::RXPO;
-    const TXPO: u8 = <(RX::PadNum, TX::PadNum, RTS::PadNum, CTS::PadNum)>::TXPO;
+    const RXPO: u8 = RX::PadNum::RXPO;
+    const TXPO: u8 = <(TX::PadNum, RTS::PadNum, CTS::PadNum)>::TXPO;
+}
+
+impl<S, I, IO, RTS, CTS> RxpoTxpo for Pads<S, I, HalfDuplex<IO>, RTS, CTS>
+where
+    S: Sercom,
+    I: IoSet,
+    IO: SomePad<PadNum: Rxpo>,
+    (IO::PadNum, RTS::PadNum, CTS::PadNum): Txpo,
+    RTS: OptionalPad,
+    CTS: OptionalPad,
+{
+    const RXPO: u8 = IO::PadNum::RXPO;
+    const TXPO: u8 = <(IO::PadNum, RTS::PadNum, CTS::PadNum)>::TXPO;
 }
 
 impl<S, I, RX, RTS, CTS> RxpoTxpo for Pads<S, I, RxSimplex<RX>, RTS, CTS>
 where
     S: Sercom,
     I: IoSet,
-    RX: SomePad,
+    RX: SomePad<PadNum: Rxpo>,
+    (NoneT, RTS::PadNum, CTS::PadNum): Txpo,
     RTS: OptionalPad,
     CTS: OptionalPad,
-    (RX::PadNum, NoneT, RTS::PadNum, CTS::PadNum): RxpoTxpo,
 {
-    const RXPO: u8 = <(RX::PadNum, NoneT, RTS::PadNum, CTS::PadNum)>::RXPO;
-    const TXPO: u8 = <(RX::PadNum, NoneT, RTS::PadNum, CTS::PadNum)>::TXPO;
+    const RXPO: u8 = RX::PadNum::RXPO;
+    const TXPO: u8 = <(NoneT, RTS::PadNum, CTS::PadNum)>::TXPO;
 }
-
 
 impl<S, I, TX, RTS, CTS> RxpoTxpo for Pads<S, I, TxSimplex<TX>, RTS, CTS>
 where
     S: Sercom,
     I: IoSet,
     TX: SomePad,
+    (TX::PadNum, RTS::PadNum, CTS::PadNum): Txpo,
     RTS: OptionalPad,
     CTS: OptionalPad,
-    (NoneT, TX::PadNum, RTS::PadNum, CTS::PadNum): RxpoTxpo,
 {
-    const RXPO: u8 = <(NoneT, TX::PadNum, RTS::PadNum, CTS::PadNum)>::RXPO;
-    const TXPO: u8 = <(NoneT, TX::PadNum, RTS::PadNum, CTS::PadNum)>::TXPO;
+    const RXPO: u8 = NoneT::RXPO;
+    const TXPO: u8 = <(TX::PadNum, RTS::PadNum, CTS::PadNum)>::TXPO;
 }
-
-
-impl<S, I, IO, RTS, CTS> RxpoTxpo for Pads<S, I, HalfDuplex<IO>, RTS, CTS>
-where
-    S: Sercom,
-    I: IoSet,
-    IO: SomePad,
-    RTS: OptionalPad,
-    CTS: OptionalPad,
-    (IO::PadNum, IO::PadNum, RTS::PadNum, CTS::PadNum): RxpoTxpo,
-{
-    const RXPO: u8 = <(IO::PadNum, IO::PadNum, RTS::PadNum, CTS::PadNum)>::RXPO;
-    const TXPO: u8 = <(IO::PadNum, IO::PadNum, RTS::PadNum, CTS::PadNum)>::TXPO;
-}
-
-
-//=============================================================================
-// Implement RxpoTxpo
-//=============================================================================
-
-/// Filter [`PadNum`] permutations and implement [`RxpoTxpo`]
-macro_rules! impl_rxpotxpo {
-    // This is the entry pattern. Start by checking RTS and CTS.
-    ($RX:ident, $TX:ident, $RTS:ident, $CTS:ident) => { impl_rxpotxpo!(@check_rts_cts, $RX, $TX, $RTS, $CTS); };
-
-    // Check whether RTS and CTS form a valid pair.
-    // They both must be the correct pad or absent.
-    (@check_rts_cts, $RX:ident, $TX:ident, NoneT, NoneT) => { impl_rxpotxpo!(@rxpo, $RX, $TX, NoneT, NoneT); };
-    (@check_rts_cts, $RX:ident, $TX:ident, Pad2, NoneT) => { impl_rxpotxpo!(@rxpo, $RX, $TX, Pad2, NoneT); };
-    (@check_rts_cts, $RX:ident, $TX:ident, NoneT, Pad3) => { impl_rxpotxpo!(@rxpo, $RX, $TX, NoneT, Pad3); };
-    (@check_rts_cts, $RX:ident, $TX:ident, Pad2, Pad3) => { impl_rxpotxpo!(@rxpo, $RX, $TX, Pad2, Pad3); };
-
-    // If RTS and CTS are not valid, fall through to this pattern.
-    (@check_rts_cts, $RX:ident, $TX:ident, $RTS:ident, $CTS:ident) => { };
-
-    // Assign RXPO based on RX.
-    // Our options are exhaustive, so no fall through pattern is needed.
-    (@rxpo, NoneT, $TX:ident, $RTS:ident, $CTS:ident) => { impl_rxpotxpo!(@txpo, NoneT, $TX, $RTS, $CTS, 0); };
-    (@rxpo, Pad0,  $TX:ident, $RTS:ident, $CTS:ident) => { impl_rxpotxpo!(@txpo, Pad0,  $TX, $RTS, $CTS, 0); };
-    (@rxpo, Pad1,  $TX:ident, $RTS:ident, $CTS:ident) => { impl_rxpotxpo!(@txpo, Pad1,  $TX, $RTS, $CTS, 1); };
-    (@rxpo, Pad2,  $TX:ident, $RTS:ident, $CTS:ident) => { impl_rxpotxpo!(@txpo, Pad2,  $TX, $RTS, $CTS, 2); };
-    (@rxpo, Pad3,  $TX:ident, $RTS:ident, $CTS:ident) => { impl_rxpotxpo!(@txpo, Pad3,  $TX, $RTS, $CTS, 3); };
-
-    // Assign TXPO based on TX, RTS and CTS
-    (@txpo, $RX:ident, NoneT, NoneT, NoneT, $RXPO:literal) => { impl_rxpotxpo!(@filter, $RX, NoneT, NoneT, NoneT, $RXPO, 0); };
-    (@txpo, $RX:ident, NoneT, Pad2, NoneT, $RXPO:literal) => { impl_rxpotxpo!(@filter, $RX, NoneT, Pad2, NoneT, $RXPO, 3); };
-    (@txpo, $RX:ident, NoneT, Pad2, Pad3, $RXPO:literal) => { impl_rxpotxpo!(@filter, $RX, NoneT, Pad2, Pad3, $RXPO, 2); };
-    (@txpo, $RX:ident, Pad0, NoneT, NoneT, $RXPO:literal) => { impl_rxpotxpo!(@filter, $RX, Pad0, NoneT, NoneT, $RXPO, 0); };
-    (@txpo, $RX:ident, Pad0, Pad2, NoneT, $RXPO:literal) => { impl_rxpotxpo!(@filter, $RX, Pad0, Pad2, NoneT, $RXPO, 3); };
-    (@txpo, $RX:ident, Pad0, Pad2, Pad3, $RXPO:literal) => { impl_rxpotxpo!(@filter, $RX, Pad0, Pad2, Pad3, $RXPO, 2); };
-
-    // If TX is not valid, fall through to this pattern.
-    (@txpo, $RX:ident, $TX:ident, $RTS:ident, $CTS:ident, $RXPO:literal) => { };
-
-    // Filter any remaining permutations that conflict.
-    (@filter, NoneT, NoneT, $RTS:ident, $CTS:ident, $RXPO:literal, $TXPO:literal) => { }; // RX and TX both NoneT
-    (@filter, Pad0, Pad0, $RTS:ident, $CTS:ident, $RXPO:literal, $TXPO:literal) => { }; // RX and TX both Pad0
-    (@filter, Pad2, $TX:ident, Pad2, $CTS:ident, $RXPO:literal, $TXPO:literal) => { }; // RX can't share a pad with RTS
-    (@filter, Pad3, $TX:ident, $RTS:ident, Pad3, $RXPO:literal, $TXPO:literal) => { }; // RX can't share a pad with CTS
-    (@filter, Pad1, $TX:ident, $RTS:ident, $CTS:ident, 1, 0) => { }; // RX can't be Pad1 if TXPO is 0 because of XCK conflict
-    (@filter, Pad1, $TX:ident, $RTS:ident, $CTS:ident, 1, 3) => { }; // RX can't be Pad1 if TXPO is 3 because of XCK conflict
-
-    // If there are no conflicts, fall through to this pattern
-    (@filter, $RX:ident, $TX:ident, $RTS:ident, $CTS:ident, $RXPO:literal, $TXPO:literal) => {
-        impl_rxpotxpo!(@implement, $RX, $TX, $RTS, $CTS, $RXPO, $TXPO);
-    };
-
-    // Implement RxpoTxpo
-    (@implement, $RX:ident, $TX:ident, $RTS:ident, $CTS:ident, $RXPO:literal, $TXPO:literal) => {
-        impl RxpoTxpo for ($RX, $TX, $RTS, $CTS) {
-            const RXPO: u8 = $RXPO;
-            const TXPO: u8 = $TXPO;
-        }
-    };
-}
-
-
-trait Rxpo { const RXPO: u8; }
-impl Rxpo for NoneT { const RXPO: u8 = 0; }
-impl Rxpo for Pad0 { const RXPO: u8 = 0; }
-impl Rxpo for Pad1 { const RXPO: u8 = 1; }
-impl Rxpo for Pad2 { const RXPO: u8 = 2; }
-impl Rxpo for Pad3 { const RXPO: u8 = 3; }
-
-trait OptionalPad0 {}
-impl OptionalPad0 for NoneT {}
-impl OptionalPad0 for Pad0 {}
-
-trait Txpo { const TXPO: u8; }
-impl<TX: OptionalPad0> Txpo for (TX, NoneT, NoneT) { const TXPO: u8 = 0; }
-impl<TX: OptionalPad0> Txpo for (TX, Pad2, Pad3) { const TXPO: u8 = 2; }
-impl<TX: OptionalPad0> Txpo for (TX, Pad2, NoneT) { const TXPO: u8 = 3; }
-
-trait RxpoTxpo2 { const RXPO: u8; const TXPO: u8; }
-
-impl<TXPO: Txpo> RxpoTxpo2 for (Pad0, TXPO) { const RXPO: u8 = Pad0::RXPO; const TXPO: u8 = TXPO::TXPO; }
-impl<TX: OptionalPad0> RxpoTxpo2 for (Pad1, (TX, Pad2, Pad3)) { const RXPO: u8 = Pad1::RXPO; const TXPO: u8 = (TX, Pad2, Pad3)::TXPO; }
-impl<TX: OptionalPad0> RxpoTxpo2 for (Pad2, (TX, NoneT, NoneT)) { const RXPO: u8 = Pad2::RXPO; const TXPO: u8 = (TX, NoneT, NoneT)::TXPO; }
-impl<TX: OptionalPad0> RxpoTxpo2 for (Pad3, (TX, NoneT, NoneT)) { const RXPO: u8 = Pad3::RXPO; const TXPO: u8 = (TX, NoneT, NoneT)::TXPO; }
-impl<TX: OptionalPad0> RxpoTxpo2 for (Pad3, (TX, Pad2, NoneT)) { const RXPO: u8 = Pad3::RXPO; const TXPO: u8 = (TX, Pad2, NoneT)::TXPO; }
-
-
-
-/// Try to implement [`RxpoTxpo`] on all possible 4-tuple permutations of
-/// [`OptionalPadNum`]s.
-///
-/// The leading `()` token tree stores a growing permutation of [`PadNum`]s.
-/// When it reaches four [`PadNum`]s, try to implement [`RxpoTxpo`].
-///
-/// The next `[]` token tree is a list of possible [`PadNum`]s to append to the
-/// growing permutation. Loop through this list and append each option to the
-/// permutation.
-///
-/// The final, optional `[]` token tree exists to temporarily store the entire
-/// list before pushing it down for the next permutation element.
-macro_rules! padnum_permutations {
-    // If we have built up four [`PadNum`]s, try to implement [`RxpoTxpo`].
-    // Ignore the remaining list of [`PadNum`]s.
-    (
-        ( $RX:ident $TX:ident $RTS:ident $CTS:ident ) [ $( $Pads:ident )* ]
-    ) => {
-        impl_rxpotxpo!($RX, $TX, $RTS, $CTS);
-    };
-    // If we only have one list of [`PadNum`]s, duplicate it, to save it for the
-    // next permutation element.
-    (
-        ( $($Perm:ident)* ) [ $($Pads:ident)+ ]
-    ) => {
-        padnum_permutations!( ( $($Perm)* ) [ $($Pads)+ ] [ $($Pads)+ ] );
-    };
-    (
-        ( $($Perm:ident)* ) [ $Head:ident $($Tail:ident)* ] [ $($Pads:ident)+ ]
-    ) => {
-        // Append the first [`PadNum`] from the list, then push down to the next
-        // permutation element.
-        padnum_permutations!( ( $($Perm)* $Head ) [ $($Pads)+ ] );
-
-        // Loop through the remaining [`PadNum`]s to do the same thing for each.
-        padnum_permutations!( ( $($Perm)* ) [ $($Tail)* ] [ $($Pads)+ ] );
-    };
-    // Once the list of [`PadNum`]s is empty, we're done with this element.
-    ( ( $($Perm:ident)* ) [ ] [ $($Pads:ident)+ ] ) => { };
-    }
-
-padnum_permutations!( () [NoneT Pad0 Pad1 Pad2 Pad3] );
 
 pub struct Empty {}
-pub struct RxSimplex<RX: SomePad> { receive: RX }
-pub struct TxSimplex<TX: SomePad> { transmit: TX }
-pub struct HalfDuplex<IO: SomePad> { io: IO }
-pub struct FullDuplex<RX: SomePad, TX: SomePad> { receive: RX, transmit: TX }
+pub struct RxSimplex<RX: SomePad> {
+    receive: RX,
+}
+pub struct TxSimplex<TX: SomePad> {
+    transmit: TX,
+}
+pub struct HalfDuplex<IO: SomePad> {
+    io: IO,
+}
+pub struct FullDuplex<RX: SomePad, TX: SomePad> {
+    receive: RX,
+    transmit: TX,
+}
 
-pub trait IoPads { type RX : OptionalPad; type TX : OptionalPad; }
-impl IoPads for Empty { type RX = NoneT; type TX = NoneT; }
-impl<RX: SomePad> IoPads for RxSimplex<RX> { type RX = RX; type TX = NoneT; }
-impl<TX: SomePad> IoPads for TxSimplex<TX> { type RX = NoneT; type TX = TX; }
-impl<IO: SomePad> IoPads for HalfDuplex<IO> { type RX = IO; type TX = IO; }
-impl<RX: SomePad, TX: SomePad> IoPads for FullDuplex<RX, TX> { type RX = RX; type TX = TX; }
+pub trait IoPads {
+    type RX: OptionalPad;
+    type TX: OptionalPad;
+    type Pads;
+    fn free(self) -> Self::Pads;
+}
+impl IoPads for Empty {
+    type RX = NoneT;
+    type TX = NoneT;
+    type Pads = ();
+    #[inline]
+    fn free(self) -> Self::Pads {
+		()
+    }
+}
+impl<RX: SomePad> IoPads for RxSimplex<RX> {
+    type RX = RX;
+    type TX = NoneT;
+    type Pads = RX;
+    #[inline]
+    fn free(self) -> Self::Pads {
+		self.receive
+    }
+}
+impl<TX: SomePad> IoPads for TxSimplex<TX> {
+    type RX = NoneT;
+    type TX = TX;
+    type Pads = TX;
+    #[inline]
+    fn free(self) -> Self::Pads {
+		self.transmit
+    }
+}
+impl<IO: SomePad> IoPads for HalfDuplex<IO> {
+    type RX = IO;
+    type TX = IO;
+    type Pads = IO;
+    #[inline]
+    fn free(self) -> Self::Pads {
+		self.io
+    }
+}
+impl<RX: SomePad, TX: SomePad> IoPads for FullDuplex<RX, TX> {
+    type RX = RX;
+    type TX = TX;
+    type Pads = (RX, TX);
+    #[inline]
+    fn free(self) -> Self::Pads {
+		(self.receive, self.transmit)
+    }
+}
 
 //=============================================================================
 // Pads
@@ -258,7 +218,6 @@ where
     clear_to_send: CTS,
 }
 
-
 impl<S: Sercom, I: IoSet> Default for Pads<S, I> {
     fn default() -> Self {
         Self {
@@ -271,7 +230,6 @@ impl<S: Sercom, I: IoSet> Default for Pads<S, I> {
     }
 }
 
-
 impl<S, I, P, RTS, CTS> Pads<S, I, P, RTS, CTS>
 where
     S: Sercom,
@@ -280,6 +238,22 @@ where
     RTS: OptionalPad,
     CTS: OptionalPad,
 {
+
+	#[inline]
+	pub fn free(self) -> (P::Pads, RTS, CTS) {
+		(self.io_pads.free(), self.ready_to_send, self.clear_to_send)
+	}
+
+    #[inline]
+    fn update_io<P2: IoPads>(self, io_pads: P2) -> Pads<S, I, P2, RTS, CTS> {
+        Pads {
+            sercom: self.sercom,
+            ioset: self.ioset,
+            io_pads,
+            ready_to_send: self.ready_to_send,
+            clear_to_send: self.clear_to_send,
+        }
+    }
 
     /// Set the `RTS` [`Pad`], which is always [`Pad2`]
     #[inline]
@@ -314,7 +288,6 @@ where
     }
 }
 
-
 impl<S, I, RTS, CTS> Pads<S, I, Empty, RTS, CTS>
 where
     S: Sercom,
@@ -329,13 +302,9 @@ where
         Id: GetPad<S>,
         Pad<S, Id>: InIoSet<I>,
     {
-        Pads {
-            sercom: self.sercom,
-            ioset: self.ioset,
-            io_pads: RxSimplex { receive: pin.into().into_mode() },
-            ready_to_send: self.ready_to_send,
-            clear_to_send: self.clear_to_send,
-        }
+        self.update_io(RxSimplex {
+            receive: pin.into().into_mode(),
+        })
     }
 
     /// Set the `TX` [`Pad`]
@@ -345,13 +314,9 @@ where
         Id: GetPad<S>,
         Pad<S, Id>: InIoSet<I>,
     {
-        Pads {
-            sercom: self.sercom,
-            ioset: self.ioset,
-            io_pads: TxSimplex { transmit: pin.into().into_mode() },
-            ready_to_send: self.ready_to_send,
-            clear_to_send: self.clear_to_send,
-        }
+        self.update_io(TxSimplex {
+            transmit: pin.into().into_mode(),
+        })
     }
 
     /// Set the 'RX' ['Pad'] and `TX` [`Pad`]
@@ -361,26 +326,11 @@ where
         Id: GetPad<S>,
         Pad<S, Id>: InIoSet<I>,
     {
-        Pads {
-            sercom: self.sercom,
-            ioset: self.ioset,
-            io_pads: HalfDuplex { io: pin.into().into_mode() },
-            ready_to_send: self.ready_to_send,
-            clear_to_send: self.clear_to_send,
-        }
+        self.update_io(HalfDuplex {
+            io: pin.into().into_mode(),
+        })
     }
-
-    /// Consume the [`Pads`] and return each individual [`Pad`]
-    #[inline]
-    pub fn free(self) -> (RTS, CTS) {
-        (
-            self.ready_to_send,
-            self.clear_to_send,
-        )
-    }
-
 }
-
 
 impl<S, I, TX, RTS, CTS> Pads<S, I, TxSimplex<TX>, RTS, CTS>
 where
@@ -392,29 +342,25 @@ where
 {
     /// Set the `RX` [`Pad`]
     #[inline]
-    pub fn rx<Id>(self, pin: impl AnyPin<Id = Id>) -> Pads<S, I, FullDuplex<Pad<S, Id>, TX>, RTS, CTS>
+    pub fn rx<Id>(
+        self,
+        pin: impl AnyPin<Id = Id>,
+    ) -> Pads<S, I, FullDuplex<Pad<S, Id>, TX>, RTS, CTS>
     where
         Id: GetPad<S>,
         Pad<S, Id>: InIoSet<I>,
     {
-        Pads {
-            sercom: self.sercom,
-            ioset: self.ioset,
-            io_pads: FullDuplex { transmit: self.io_pads.transmit, receive: pin.into().into_mode() },
-            ready_to_send: self.ready_to_send,
-            clear_to_send: self.clear_to_send,
-        }
+    	Pads {
+			sercom: self.sercom,
+			ioset: self.ioset,
+			io_pads: FullDuplex {
+            	transmit: self.io_pads.transmit,
+            	receive: pin.into().into_mode(),
+        	},
+        	ready_to_send: self.ready_to_send,
+        	clear_to_send: self.clear_to_send,
+    	}
     }
-    /// Consume the [`Pads`] and return each individual [`Pad`]
-    #[inline]
-    pub fn free(self) -> (TX, RTS, CTS) {
-        (
-        	self.io_pads.transmit,
-            self.ready_to_send,
-            self.clear_to_send,
-        )
-    }
-    
 }
 
 impl<S, I, RX, RTS, CTS> Pads<S, I, RxSimplex<RX>, RTS, CTS>
@@ -427,72 +373,26 @@ where
 {
     /// Set the `RX` [`Pad`]
     #[inline]
-    pub fn tx<Id>(self, pin: impl AnyPin<Id = Id>) -> Pads<S, I, FullDuplex<RX, Pad<S, Id>>, RTS, CTS>
+    pub fn tx<Id>(
+        self,
+        pin: impl AnyPin<Id = Id>,
+    ) -> Pads<S, I, FullDuplex<RX, Pad<S, Id>>, RTS, CTS>
     where
         Id: GetPad<S>,
         Pad<S, Id>: InIoSet<I>,
     {
-        Pads {
-            sercom: self.sercom,
-            ioset: self.ioset,
-            io_pads: FullDuplex { transmit: pin.into().into_mode(), receive: self.io_pads.receive },
-            ready_to_send: self.ready_to_send,
-            clear_to_send: self.clear_to_send,
-        }
-    }
-    /// Consume the [`Pads`] and return each individual [`Pad`]
-    #[inline]
-    pub fn free(self) -> (RX, RTS, CTS) {
-        (
-        	self.io_pads.receive,
-            self.ready_to_send,
-            self.clear_to_send,
-        )
+    	Pads {
+			sercom: self.sercom,
+			ioset: self.ioset,
+			io_pads: FullDuplex {
+	            transmit: pin.into().into_mode(),
+	            receive: self.io_pads.receive,
+	        },
+        	ready_to_send: self.ready_to_send,
+        	clear_to_send: self.clear_to_send,
+    	}
     }
 }
-
-
-impl<S, I, RX, TX, RTS, CTS> Pads<S, I, FullDuplex<RX, TX>, RTS, CTS>
-where
-    S: Sercom,
-    I: IoSet,
-    RX: SomePad,
-    TX: SomePad,
-    RTS: OptionalPad,
-    CTS: OptionalPad,
-{
-    /// Consume the [`Pads`] and return each individual [`Pad`]
-    #[inline]
-    pub fn free(self) -> (RX, TX, RTS, CTS) {
-        (
-        	self.io_pads.receive,
-        	self.io_pads.transmit,
-            self.ready_to_send,
-            self.clear_to_send,
-        )
-    }
-}
-
-
-impl<S, I, IO, RTS, CTS> Pads<S, I, HalfDuplex<IO>, RTS, CTS>
-where
-    S: Sercom,
-    I: IoSet,
-    IO: SomePad,
-    RTS: OptionalPad,
-    CTS: OptionalPad,
-{
-    /// Consume the [`Pads`] and return each individual [`Pad`]
-    #[inline]
-    pub fn free(self) -> (IO, RTS, CTS) {
-        (
-        	self.io_pads.io,
-            self.ready_to_send,
-            self.clear_to_send,
-        )
-    }
-}
-
 
 /// Define a set of [`Pads`] using [`PinId`]s instead of [`Pin`]s
 ///
@@ -531,23 +431,26 @@ pub type PadsFromIds<S, I, RX = NoneT, TX = NoneT, RTS = NoneT, CTS = NoneT> = P
     <CTS as GetOptionalPad<S>>::Pad,
 >;
 
-pub trait IoMapType { type IoMapped; }
-impl IoMapType for (NoneT, NoneT) { type IoMapped = Empty; }
-impl<RX : SomePad> IoMapType for (RX, NoneT) { type IoMapped = RxSimplex<RX>; }
-impl<TX : SomePad> IoMapType for (NoneT, TX) { type IoMapped = TxSimplex<TX>; }
+pub trait IoMapType {
+    type IoMapped;
+}
+impl IoMapType for (NoneT, NoneT) {
+    type IoMapped = Empty;
+}
+impl<RX: SomePad> IoMapType for (RX, NoneT) {
+    type IoMapped = RxSimplex<RX>;
+}
+impl<TX: SomePad> IoMapType for (NoneT, TX) {
+    type IoMapped = TxSimplex<TX>;
+}
 // not possible ->
 //impl<IO : SomePad> IoMapType for (IO, IO) { type IoMapped = HalfDuplex<IO>; }
-impl<RX : SomePad, TX : SomePad> IoMapType for (RX, TX) { type IoMapped = FullDuplex<RX, TX>; }
+impl<RX: SomePad<PadNum: NotPad0>, TX: SomePad> IoMapType for (RX, TX) {
+    type IoMapped = FullDuplex<RX, TX>;
+}
 
-
-pub type PadsHalfDuplexFromIds<S, I, IO, RTS = NoneT, CTS = NoneT> = Pads<
-    S,
-    I,
-    HalfDuplex<IO>,
-    <RTS as GetOptionalPad<S>>::Pad,
-    <CTS as GetOptionalPad<S>>::Pad,
->;
-
+pub type PadsHalfDuplexFromIds<S, I, IO, RTS = NoneT, CTS = NoneT> =
+    Pads<S, I, HalfDuplex<IO>, <RTS as GetOptionalPad<S>>::Pad, <CTS as GetOptionalPad<S>>::Pad>;
 
 //=============================================================================
 // PadSet
@@ -677,4 +580,3 @@ where
 pub trait ValidConfig: AnyConfig {}
 
 impl<P: ValidPads, C: CharSize> ValidConfig for Config<P, C> {}
-
