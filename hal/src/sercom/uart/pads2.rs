@@ -2,33 +2,28 @@
 use crate::sercom::*;
 use crate::gpio::*;
 use crate::typelevel::NoneT;
+use core::marker::PhantomData;
 
-trait Rxpo {}
 
-struct Rx {}
-struct Tx {}
-struct Clk {}
-struct Rts {}
-struct Cts {}
-struct Unused {}
+trait UartPin {}
+struct Rx<P: SomePin> { pin: P }
+struct Tx<P: SomePin> { pin: P }
+impl<P: SomePin> UartPin for Rx<P> {}
+impl<P: SomePin> UartPin for Tx<P> {}
 
-trait UartRole {}
-impl UartRole for Rx {}
-impl UartRole for Tx {}
-impl UartRole for Clk {}
-impl UartRole for Rts {}
-impl UartRole for Cts {}
-impl UartRole for Unused {}
+trait OptionalUartPin {}
+impl<P: UartPin> OptionalUartPin for P {}
+impl OptionalUartPin for NoneT {}
 
-trait UartPin {
-	type Role: UartRole;
-	type Pin: SomePin;
-}
-
-pub struct Pads<S: Sercom, P0: UartPin<Pin: OptionalPin<Id: GetPad<S, PadNum = Pad0>>>, P1: UartPin<Pin: OptionalPin<Id: GetPad<S, PadNum = Pad1>>>> {
+pub struct Pads<S: Sercom, P0: OptionalUartPin> {
 	s: S,
 	p0: P0,
-	p1: P1,
 }
 
 
+fn test(s: Sercom1, pin: Pin<PA16, AlternateD>) {
+
+	let p = Pads { s, p0: Rx { pin } };
+	//let s = Pads { s, p0: NoneT };
+
+}
