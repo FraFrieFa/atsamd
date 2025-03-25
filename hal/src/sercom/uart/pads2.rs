@@ -28,11 +28,48 @@ impl<S: Sercom> Pads<S> {
 	}
 }
 
-trait PadsTrait {}
-impl<S: Sercom, P0: OptionalPin, P1: OptionalPin, P2: OptionalPin, P3: OptionalPin, Rx: OptionalPadNum, Tx: OptionalPadNum, Clk: OptionalPadNum, Rts: OptionalPadNum, Cts: OptionalPadNum> PadsTrait for Pads<S, P0, P1, P2, P3, Rx, Tx, Clk, Rts, Cts> {}
+
+pub trait PadsInterface {
+    type SercomType: Sercom;
+    type P0: OptionalPin;
+    type P1: OptionalPin;
+    type P2: OptionalPin;
+    type P3: OptionalPin;
+    type Rx: OptionalPadNum;
+    type Tx: OptionalPadNum;
+    type Clk: OptionalPadNum;
+    type Rts: OptionalPadNum;
+    type Cts: OptionalPadNum;
+
+    fn access(self) -> Pads<Self::SercomType, Self::P0, Self::P1, Self::P2, Self::P3, Self::Rx, Self::Tx, Self::Clk, Self::Rts, Self::Cts>;
+}
+
+
+impl<S: Sercom, P0: OptionalPin, P1: OptionalPin, P2: OptionalPin, P3: OptionalPin,
+     Rx: OptionalPadNum, Tx: OptionalPadNum, Clk: OptionalPadNum,
+     Rts: OptionalPadNum, Cts: OptionalPadNum>
+    PadsInterface for Pads<S, P0, P1, P2, P3, Rx, Tx, Clk, Rts, Cts>
+{
+    type SercomType = S;
+    type P0 = P0;
+    type P1 = P1;
+    type P2 = P2;
+    type P3 = P3;
+    type Rx = Rx;
+    type Tx = Tx;
+    type Clk = Clk;
+    type Rts = Rts;
+    type Cts = Cts;
+    fn access(self) -> Pads<S, P0, P1, P2, P3, Rx, Tx, Clk, Rts, Cts> {
+        self
+    }
+}
+
+
+
 
 trait ReplacePad<P: PadNum, NewPin: SomePin> {
-	type Output;
+	type Output: PadsInterface;
 	fn replace_pad(self, new_pin: NewPin) -> Self::Output;
 }
 
@@ -128,7 +165,7 @@ impl<S: Sercom, P0: OptionalPin, P1: OptionalPin, P2: OptionalPin, P3: OptionalP
 		Self: ReplacePad<<P::Id as GetPad<S>>::PadNum, P>,
 	{
 		let replaced = self.replace_pad(new_pin);
-		//let a = replaced.s;
+		let a = replaced.access().s;
 	}
 }
 
