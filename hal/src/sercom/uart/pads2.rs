@@ -572,8 +572,28 @@ impl<
     }
 }
 
+trait Rxpo { const RXPO: u8; }
+impl Rxpo for NoneT { const RXPO: u8 = 0; }
+impl Rxpo for Pad0 { const RXPO: u8 = 0; }
+impl Rxpo for Pad1 { const RXPO: u8 = 1; }
+impl Rxpo for Pad2 { const RXPO: u8 = 2; }
+impl Rxpo for Pad3 { const RXPO: u8 = 3; }
 
+trait Txpo { const TXPO: u8; }
+impl Txpo for (NoneT, NoneT, NoneT, NoneT) { const TXPO: u8 = 0; }
+impl Txpo for (Pad0, NoneT, NoneT, NoneT) { const TXPO: u8 = 0; }
+impl Txpo for (NoneT, Pad1, NoneT, NoneT) { const TXPO: u8 = 0; }
+impl Txpo for (Pad0, Pad1, NoneT, NoneT) { const TXPO: u8 = 0; }
 
+impl Txpo for (NoneT, NoneT, Pad2, Pad3) { const TXPO: u8 = 2; }
+impl Txpo for (NoneT, NoneT, NoneT, Pad3) { const TXPO: u8 = 2; }
+impl Txpo for (Pad0, NoneT, NoneT, Pad3) { const TXPO: u8 = 2; }
+impl Txpo for (Pad0, NoneT, Pad2, Pad3) { const TXPO: u8 = 2; }
+
+impl Txpo for (Pad0, Pad1, Pad2, NoneT) { const TXPO: u8 = 3; }
+impl Txpo for (NoneT, Pad1, Pad2, NoneT) { const TXPO: u8 = 3; }
+impl Txpo for (Pad0, NoneT, Pad2, NoneT) { const TXPO: u8 = 3; }
+impl Txpo for (NoneT, NoneT, Pad2, NoneT) { const TXPO: u8 = 3; }
 
 fn test(s: Sercom3, pin: Pin<PA16, AlternateD>, pin2: Pin<PA17, AlternateD>, pin3: Pin<PA19, AlternateD>) {
     let _tp = Pads::default(s).io(pin);
