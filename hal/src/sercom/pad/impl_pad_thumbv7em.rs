@@ -2,10 +2,16 @@
 
 use crate::gpio::*;
 use crate::sercom::*;
+use crate::typelevel::HList;
+use crate::mk_hlist;
 
 //==============================================================================
 //  Pad definitions
 //==============================================================================
+
+pub trait IoSets {
+    type Output: HList;
+}
 
 macro_rules! pad_info {
 
@@ -49,6 +55,9 @@ macro_rules! pad_info {
         impl IsPad for Pin<$PinId, Alternate<$Cfg>> {
             type Sercom = $Sercom;
             type PadNum = $PadNum;
+        }
+        impl IoSets for Pin<$PinId, Alternate<$Cfg>> {
+            type Output = mk_hlist!($( $IoSet ),+);
         }
     };
 }
