@@ -633,7 +633,9 @@
 
 use core::ops::{Add, Sub};
 
-use typenum::{Add1, Bit, Sub1, UInt, Unsigned, B1, U0};
+use typenum::{Add1, Bit, Cmp, Equal, Greater, Less, Sub1, UInt, Unsigned, B1, U0};
+
+use core::marker::PhantomData;
 
 mod private {
     /// Super trait used to mark traits with an exhaustive set of
@@ -781,3 +783,153 @@ where
         Self::Dec::default()
     }
 }
+
+//
+// 1. HList Definitions
+//
+
+/// The empty type-level list.
+pub struct Nil;
+
+/// A nonempty type-level list built from a head element `H` and a tail `T`.
+pub struct Cons<H, T>(PhantomData<(H, T)>);
+
+/// Marker trait for type-level lists.
+pub trait HList {}
+
+impl HList for Nil {}
+impl<H, T: HList> HList for Cons<H, T> {}
+
+//
+// 2. HList Construction Macro
+//
+
+/// Macro to build a type-level list (HList) from a comma-separated list of
+/// types.
+///
+/// # Examples
+///
+/// ```rust
+/// # #[macro_use] extern crate your_crate_name;
+/// # use your_crate_name::typelevel::*;
+/// type MyList = mk_hlist!(u8, u16, u32);
+/// // MyList is equivalent to: Cons<u8, Cons<u16, Cons<u32, Nil>>>
+/// ```
+#[macro_export]
+macro_rules! mk_hlist {
+    ($head:ty) => {
+        $crate::typelevel::Cons<$head, $crate::typelevel::Nil>
+    };
+    ($head:ty, $($tail:ty),+) => {
+        $crate::typelevel::Cons<$head, mk_hlist!($($tail),+)>
+    };
+}
+
+//
+// 3. SortedHList
+//
+
+/// Marker trait indicating that an HList is sorted in non-decreasing order.
+/// For a list with two or more elements, the head must be less than or equal to
+/// the head of the tail.
+pub trait SortedHList: HList {}
+
+impl SortedHList for Nil {}
+impl<H> SortedHList for Cons<H, Nil> {}
+
+/// Helper trait to mark “Less or Equal” at the type level.
+///
+/// This trait is implemented for typenum's ordering results that are either
+/// equal or less.
+pub trait LeOrEq {}
+impl LeOrEq for Equal {}
+impl LeOrEq for Less {}
+
+impl<H, HT, TT> SortedHList for Cons<H, Cons<HT, TT>>
+where
+    // The tail must also be a sorted list.
+    Cons<HT, TT>: SortedHList,
+    // Compare the head with the head of the tail.
+    H: Cmp<HT>,
+    // Ensure the head is less than or equal to the next element.
+    <H as Cmp<HT>>::Output: LeOrEq,
+{
+}
+
+//
+// 4. Intersection Trait for Sorted HLists
+//
+
+/// Computes the intersection (common elements) of two sorted type-level lists.
+/// The result is itself a type-level list.
+pub trait Intersection<Other: HList>: HList {
+    type Output: HList;
+}
+
+// Base cases:
+// If one list is empty, the intersection is empty.
+impl<H, T: HList> Intersection<Nil> for Cons<H, T> {
+    type Output = Nil;
+}
+
+impl<List: HList> Intersection<List> for Nil {
+    type Output = Nil;
+}
+
+/// Helper type used to dispatch among the three intersection cases.
+pub struct IntersectionCase<Left, Right, Ord>(PhantomData<(Left, Right, Ord)>);
+
+/// Helper trait to extract the intersection result.
+pub trait IntersectionCaseTrait {
+    type Output: HList;
+}
+
+/// Case 1: The heads of both lists are equal.
+/// In this case, include the head and recursively intersect the tails.
+impl<HA, TA, HB, TB: HList> IntersectionCaseTrait
+    for IntersectionCase<Cons<HA, TA>, Cons<HB, TB>, Equal>
+where
+    TA: Intersection<TB>,
+{
+    type Output = Cons<HA, <TA as Intersection<TB>>::Output>;
+}
+
+/// Case 2: The left head is less than the right head.
+/// Skip the left head and intersect its tail with the entire right list.
+impl<HA, TA, HB, TB: HList> IntersectionCaseTrait
+    for IntersectionCase<Cons<HA, TA>, Cons<HB, TB>, Less>
+where
+    TA: Intersection<Cons<HB, TB>>,
+{
+    type Output = <TA as Intersection<Cons<HB, TB>>>::Output;
+}
+
+/// Case 3: The left head is greater than the right head.
+/// Skip the right head and intersect the entire left list with the tail of the
+/// right list.
+impl<HA, TA, HB, TB: HList> IntersectionCaseTrait
+    for IntersectionCase<Cons<HA, TA>, Cons<HB, TB>, Greater>
+where
+    Cons<HA, TA>: Intersection<TB>,
+{
+    type Output = <Cons<HA, TA> as Intersection<TB>>::Output;
+}
+
+/// Main recursive implementation of `Intersection` for non-empty lists.
+/// Dispatches to the appropriate case based on the comparison of the heads.
+impl<HA, TA: HList, HB, TB: HList> Intersection<Cons<HB, TB>> for Cons<HA, TA>
+where
+    HA: Cmp<HB>,
+    IntersectionCase<Cons<HA, TA>, Cons<HB, TB>, <HA as Cmp<HB>>::Output>: IntersectionCaseTrait,
+{
+    type Output = <IntersectionCase<
+        Cons<HA, TA>,
+        Cons<HB, TB>,
+        <HA as Cmp<HB>>::Output,
+    > as IntersectionCaseTrait>::Output;
+}
+
+// Trait that proves an HList is *non-empty*
+pub trait NonEmptyHList: HList {}
+
+impl<H, T: HList> NonEmptyHList for Cons<H, T> {}
