@@ -3,8 +3,9 @@
 use super::{AnyConfig, Capability, CharSize, Config, Duplex, Rx, Tx};
 use crate::{
     gpio::AnyPin,
+    gpio::Pin,
     sercom::*,
-    typelevel::{NoneT, Sealed},
+    typelevel::{NoneT, Sealed, NonEmptyHList},
 };
 use core::marker::PhantomData;
 
@@ -36,10 +37,9 @@ pub trait RxpoTxpo {
 
 /// Lift the implementations of [`RxpoTxpo`] from four-tuples of
 /// [`OptionalPadNum`]s to the corresponding [`Pads`] types.
-impl<S, I, RX, TX, RTS, CTS> RxpoTxpo for Pads<S, I, RX, TX, RTS, CTS>
+impl<S, RX, TX, RTS, CTS> RxpoTxpo for Pads<S, RX, TX, RTS, CTS>
 where
     S: Sercom,
-    I: IoSet,
     RX: OptionalPad,
     TX: OptionalPad,
     RTS: OptionalPad,
@@ -161,28 +161,25 @@ padnum_permutations!( () [NoneT Pad0 Pad1 Pad2 Pad3] );
 ///
 /// See the [module-level](crate::sercom::uart) documentation for more
 /// details on specifying a `Pads` type and creating instances.
-pub struct Pads<S, I, RX = NoneT, TX = NoneT, RTS = NoneT, CTS = NoneT>
+pub struct Pads<S, RX = NoneT, TX = NoneT, RTS = NoneT, CTS = NoneT>
 where
     S: Sercom,
-    I: IoSet,
     RX: OptionalPad,
     TX: OptionalPad,
     RTS: OptionalPad,
     CTS: OptionalPad,
 {
     sercom: PhantomData<S>,
-    ioset: PhantomData<I>,
     receive: RX,
     transmit: TX,
     ready_to_send: RTS,
     clear_to_send: CTS,
 }
 
-impl<S: Sercom, I: IoSet> Default for Pads<S, I> {
+impl<S: Sercom> Default for Pads<S> {
     fn default() -> Self {
         Self {
             sercom: PhantomData,
-            ioset: PhantomData,
             receive: NoneT,
             transmit: NoneT,
             ready_to_send: NoneT,
@@ -191,10 +188,9 @@ impl<S: Sercom, I: IoSet> Default for Pads<S, I> {
     }
 }
 
-impl<S, I, RX, TX, RTS, CTS> Pads<S, I, RX, TX, RTS, CTS>
+impl<S, RX, TX, RTS, CTS> Pads<S, RX, TX, RTS, CTS>
 where
     S: Sercom,
-    I: IoSet,
     RX: OptionalPad,
     TX: OptionalPad,
     RTS: OptionalPad,
@@ -202,14 +198,15 @@ where
 {
     /// Set the `RX` [`Pad`]
     #[inline]
-    pub fn rx<Id>(self, pin: impl AnyPin<Id = Id>) -> Pads<S, I, Pad<S, Id>, TX, RTS, CTS>
+    pub fn rx<Id>(self, pin: impl AnyPin<Id = Id>) -> Pads<S, Pad<S, Id>, TX, RTS, CTS>
     where
         Id: GetPad<S>,
-        Pad<S, Id>: InIoSet<I>,
+        (Pad<S, Id>, TX, RTS, CTS): CommonIoSets,
+        <(Pad<S, Id>, TX, RTS, CTS) as CommonIoSets>::IoSets: NonEmptyHList,
+        Pin<Id, <Id as GetPad<S>>::PinMode>: IsPad,
     {
         Pads {
             sercom: self.sercom,
-            ioset: self.ioset,
             receive: pin.into().into_mode(),
             transmit: self.transmit,
             ready_to_send: self.ready_to_send,
@@ -219,14 +216,15 @@ where
 
     /// Set the `TX` [`Pad`]
     #[inline]
-    pub fn tx<Id>(self, pin: impl AnyPin<Id = Id>) -> Pads<S, I, RX, Pad<S, Id>, RTS, CTS>
+    pub fn tx<Id>(self, pin: impl AnyPin<Id = Id>) -> Pads<S, RX, Pad<S, Id>, RTS, CTS>
     where
         Id: GetPad<S>,
-        Pad<S, Id>: InIoSet<I>,
+        (RX, Pad<S, Id>, RTS, CTS): CommonIoSets,
+        <(RX, Pad<S, Id>, RTS, CTS) as CommonIoSets>::IoSets: NonEmptyHList,
+        Pin<Id, <Id as GetPad<S>>::PinMode>: IsPad,
     {
         Pads {
             sercom: self.sercom,
-            ioset: self.ioset,
             receive: self.receive,
             transmit: pin.into().into_mode(),
             ready_to_send: self.ready_to_send,
@@ -236,14 +234,15 @@ where
 
     /// Set the `RTS` [`Pad`], which is always [`Pad2`]
     #[inline]
-    pub fn rts<Id>(self, pin: impl AnyPin<Id = Id>) -> Pads<S, I, RX, TX, Pad<S, Id>, CTS>
+    pub fn rts<Id>(self, pin: impl AnyPin<Id = Id>) -> Pads<S, RX, TX, Pad<S, Id>, CTS>
     where
         Id: GetPad<S>,
-        Pad<S, Id>: InIoSet<I>,
+        (RX, TX, Pad<S, Id>, CTS): CommonIoSets,
+        <(RX, TX, Pad<S, Id>, CTS) as CommonIoSets>::IoSets: NonEmptyHList,
+        Pin<Id, <Id as GetPad<S>>::PinMode>: IsPad,
     {
         Pads {
             sercom: self.sercom,
-            ioset: self.ioset,
             receive: self.receive,
             transmit: self.transmit,
             ready_to_send: pin.into().into_mode(),
@@ -253,14 +252,15 @@ where
 
     /// Set the `CTS` [`Pad`], which is always [`Pad3`]
     #[inline]
-    pub fn cts<Id>(self, pin: impl AnyPin<Id = Id>) -> Pads<S, I, RX, TX, RTS, Pad<S, Id>>
+    pub fn cts<Id>(self, pin: impl AnyPin<Id = Id>) -> Pads<S, RX, TX, RTS, Pad<S, Id>>
     where
         Id: GetPad<S>,
-        Pad<S, Id>: InIoSet<I>,
+        (RX, TX, RTS, Pad<S, Id>): CommonIoSets,
+        <(RX, TX, RTS, Pad<S, Id>) as CommonIoSets>::IoSets: NonEmptyHList,
+        Pin<Id, <Id as GetPad<S>>::PinMode>: IsPad,
     {
         Pads {
             sercom: self.sercom,
-            ioset: self.ioset,
             receive: self.receive,
             transmit: self.transmit,
             ready_to_send: self.ready_to_send,
@@ -285,7 +285,7 @@ where
 /// In some cases, it is more convenient to specify a set of `Pads` using
 /// `PinId`s rather than `Pin`s. This alias makes it easier to do so.
 ///
-/// The first two type parameters are the [`Sercom`] and [`IoSet`], while the
+/// The first parameter it the [`Sercom`], while the
 /// remaining four are effectively [`OptionalPinId`]s representing the
 /// corresponding type parameters of [`Pads`], i.e. `RX`, `TX`, `RTS` & `CTS`.
 /// Each of the remaining type parameters defaults to [`NoneT`].
@@ -294,10 +294,9 @@ where
 /// use atsamd_hal::pac::Peripherals;
 /// use atsamd_hal::gpio::{PA08, PA09, Pins};
 /// use atsamd_hal::sercom::{Sercom0, uart};
-/// use atsamd_hal::sercom::pad::IoSet1;
 /// use atsamd_hal::typelevel::NoneT;
 ///
-/// pub type Pads = uart::PadsFromIds<Sercom0, IoSet1, PA09T, PA08>;
+/// pub type Pads = uart::PadsFromIds<Sercom0, PA09, PA08>;
 ///
 /// pub fn create_pads() -> Pads {
 ///     let peripherals = Peripherals::take().unwrap();
@@ -309,9 +308,8 @@ where
 /// [`Pin`]: crate::gpio::Pin
 /// [`PinId`]: crate::gpio::PinId
 /// [`OptionalPinId`]: crate::gpio::OptionalPinId
-pub type PadsFromIds<S, I, RX = NoneT, TX = NoneT, RTS = NoneT, CTS = NoneT> = Pads<
+pub type PadsFromIds<S, RX = NoneT, TX = NoneT, RTS = NoneT, CTS = NoneT> = Pads<
     S,
-    I,
     <RX as GetOptionalPad<S>>::Pad,
     <TX as GetOptionalPad<S>>::Pad,
     <RTS as GetOptionalPad<S>>::Pad,
@@ -340,17 +338,15 @@ pub type PadsFromIds<S, I, RX = NoneT, TX = NoneT, RTS = NoneT, CTS = NoneT> = P
 /// [type-level function]: crate::typelevel#type-level-functions
 pub trait PadSet: Sealed {
     type Sercom: Sercom;
-    type IoSet: IoSet;
     type Rx: OptionalPad;
     type Tx: OptionalPad;
     type Rts: OptionalPad;
     type Cts: OptionalPad;
 }
 
-impl<S, I, RX, TX, RTS, CTS> Sealed for Pads<S, I, RX, TX, RTS, CTS>
+impl<S, RX, TX, RTS, CTS> Sealed for Pads<S, RX, TX, RTS, CTS>
 where
     S: Sercom,
-    I: IoSet,
     RX: OptionalPad,
     TX: OptionalPad,
     RTS: OptionalPad,
@@ -358,17 +354,15 @@ where
 {
 }
 
-impl<S, I, RX, TX, RTS, CTS> PadSet for Pads<S, I, RX, TX, RTS, CTS>
+impl<S, RX, TX, RTS, CTS> PadSet for Pads<S, RX, TX, RTS, CTS>
 where
     S: Sercom,
-    I: IoSet,
     RX: OptionalPad,
     TX: OptionalPad,
     RTS: OptionalPad,
     CTS: OptionalPad,
 {
     type Sercom = S;
-    type IoSet = I;
     type Rx = RX;
     type Tx = TX;
     type Rts = RTS;
@@ -390,10 +384,9 @@ pub trait ValidPads: PadSet + RxpoTxpo {
     type Capability: Capability;
 }
 
-impl<S, I, RX, RTS> ValidPads for Pads<S, I, RX, NoneT, RTS, NoneT>
+impl<S, RX, RTS> ValidPads for Pads<S, RX, NoneT, RTS, NoneT>
 where
     S: Sercom,
-    I: IoSet,
     RX: SomePad,
     RTS: OptionalPad,
     Self: PadSet + RxpoTxpo,
@@ -401,10 +394,9 @@ where
     type Capability = Rx;
 }
 
-impl<S, I, TX, CTS> ValidPads for Pads<S, I, NoneT, TX, NoneT, CTS>
+impl<S, TX, CTS> ValidPads for Pads<S, NoneT, TX, NoneT, CTS>
 where
     S: Sercom,
-    I: IoSet,
     TX: SomePad,
     CTS: OptionalPad,
     Self: PadSet + RxpoTxpo,
@@ -412,10 +404,9 @@ where
     type Capability = Tx;
 }
 
-impl<S, I, RX, TX, RTS, CTS> ValidPads for Pads<S, I, RX, TX, RTS, CTS>
+impl<S, RX, TX, RTS, CTS> ValidPads for Pads<S, RX, TX, RTS, CTS>
 where
     S: Sercom,
-    I: IoSet,
     RX: SomePad,
     TX: SomePad,
     RTS: OptionalPad,

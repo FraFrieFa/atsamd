@@ -926,3 +926,8 @@ where
         <HA as Cmp<HB>>::Output,
     > as IntersectionCaseTrait>::Output;
 }
+
+// Trait that proves an HList is *non-empty*
+pub trait NonEmptyHList: HList {}
+
+impl<H, T: HList> NonEmptyHList for Cons<H, T> {}

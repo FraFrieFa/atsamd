@@ -41,7 +41,9 @@ use super::Sercom;
 #[hal_cfg(any("sercom0-d21", "sercom0-d5x"))]
 use crate::gpio::OptionalPinId;
 use crate::gpio::{AnyPin, OptionalPin, Pin, PinId, PinMode};
-use crate::typelevel::{NoneT, Sealed};
+use crate::typelevel::{NoneT, Sealed, HList};
+use crate::mk_hlist;
+use crate::typelevel::Intersection;
 
 #[hal_module(
     any("sercom0-d11", "sercom0-d21") => "pad/impl_pad_thumbv6m.rs",
@@ -274,7 +276,9 @@ mod ioset {
     /// See the [type-level enum] documentation for more details on the pattern.
     ///
     /// [type-level enum]: crate::typelevel#type-level-enum
-    pub trait IoSet: Sealed {}
+    pub trait IoSet: Sealed {
+		type Order;
+    }
 
     seq!(N in 1..=6 {
         paste! {
@@ -286,9 +290,18 @@ mod ioset {
             /// [type-level enum]: crate::typelevel#type-level-enum
             pub enum IoSet~N {}
             impl Sealed for IoSet~N {}
-            impl IoSet for IoSet~N {}
+            impl IoSet for IoSet~N {
+				type Order = typenum::U~N;
+            }
         }
     });
+
+	// Implement IoSets for NoneT, making it act as a wildcard.
+	seq!(N in 1..=6 {
+		impl IoSets for NoneT {
+			type SetList = mk_hlist! ( #(<IoSet~N as IoSet>::Order, )* <UndocIoSet1 as IoSet>::Order, <UndocIoSet2 as IoSet>::Order );
+		}
+	});
 
     /// Type-level variant of [`IoSet`] representing an undocumented SERCOM
     /// IOSET
@@ -312,7 +325,9 @@ mod ioset {
     /// [type-level enum]: crate::typelevel#type-level-enum
     pub enum UndocIoSet1 {}
     impl Sealed for UndocIoSet1 {}
-    impl IoSet for UndocIoSet1 {}
+    impl IoSet for UndocIoSet1 {
+		type Order = typenum::U8;
+    }
 
     /// Type-level variant of [`IoSet`] representing an undocumented SERCOM
     /// IOSET
@@ -336,7 +351,9 @@ mod ioset {
     /// [type-level enum]: crate::typelevel#type-level-enum
     pub enum UndocIoSet2 {}
     impl Sealed for UndocIoSet2 {}
-    impl IoSet for UndocIoSet2 {}
+    impl IoSet for UndocIoSet2 {
+		type Order = typenum::U9;
+	}
 
     /// Type class for SERCOM pads in a given [`IoSet`]
     ///
@@ -352,6 +369,28 @@ mod ioset {
         I: IoSet,
     {
     }
+
+	// This trait links all possible IoSets indices to an OptionalPad (NoneT serves as wildcard)
+    pub trait IoSets 
+	where
+		Self: OptionalPad,
+    {
+	    type SetList: HList;
+	}
+
+	pub trait CommonIoSets {
+		type IoSets;
+	}
+
+	impl<P0: IoSets, P1: IoSets, P2: IoSets, P3: IoSets> CommonIoSets for (P0, P1, P2, P3)
+	where 
+		P0::SetList: Intersection<P1::SetList>,
+		<P0::SetList as Intersection<P1::SetList>>::Output: Intersection<P2::SetList>,
+		<<P0::SetList as Intersection<P1::SetList>>::Output as Intersection<P2::SetList>>::Output: Intersection<P3::SetList>
+	{
+		type IoSets = <<<P0::SetList as Intersection<P1::SetList>>::Output as Intersection<P2::SetList>>::Output as Intersection<P3::SetList>>::Output;
+	}
+
 }
 
 #[hal_cfg("sercom0-d5x")]
