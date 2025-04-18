@@ -9,6 +9,8 @@ use crate::pac::tc0::Count16 as Count16Reg;
 use crate::pac::{Mclk, Tc2, Tc3};
 #[hal_cfg(all("tc4", "tc5"))]
 use crate::pac::{Tc4, Tc5};
+#[hal_cfg(all("tc6", "tc7"))]
+use crate::pac::{Tc6, Tc7};
 use crate::timer_params::TimerParams;
 use crate::timer_traits::InterruptDrivenTimer;
 
@@ -94,16 +96,12 @@ where
 
         // Disable the timer while we reconfigure it
         count.ctrla().modify(|_, w| w.enable().clear_bit());
-        while count.status().read().perbufv().bit_is_set() {}
+        while count.syncbusy().read().enable().bit_is_set() {}
 
         // Now that we have a clock routed to the peripheral, we
         // can ask it to perform a reset.
         count.ctrla().write(|w| w.swrst().set_bit());
-
-        while count.status().read().perbufv().bit_is_set() {}
-        // the SVD erroneously marks swrst as write-only, so we
-        // need to manually read the bit here
-        while count.ctrla().read().bits() & 1 != 0 {}
+        while count.syncbusy().read().swrst().bit_is_set() {}
 
         count.ctrlbset().write(|w| {
             // Count up when the direction bit is zero
@@ -182,7 +180,7 @@ impl TimerCounter<$TC>
 
             // Disable the timer while we reconfigure it
             count.ctrla().modify(|_, w| w.enable().clear_bit());
-            while count.status().read().perbufv().bit_is_set()  {}
+            while count.syncbusy().read().enable().bit_is_set()  {}
         }
         Self {
             freq: clock.freq(),
@@ -203,4 +201,10 @@ tc! {
 tc! {
     TimerCounter4: (Tc4, tc4_, Tc4Tc5Clock, apbcmask),
     TimerCounter5: (Tc5, tc5_, Tc4Tc5Clock, apbcmask),
+}
+
+#[hal_cfg(all("tc6", "tc7"))]
+tc! {
+    TimerCounter6: (Tc6, tc6_, Tc6Tc7Clock, apbdmask),
+    TimerCounter7: (Tc7, tc7_, Tc6Tc7Clock, apbdmask),
 }
