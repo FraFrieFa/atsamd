@@ -530,6 +530,87 @@ use atsamd_hal_macros::{hal_cfg, hal_module};
 )]
 mod pads {}
 
+mod newpads {
+
+	use core::marker::PhantomData;
+	use crate::sercom::{Sercom, IsPad, OptionalPad};
+	use crate::sercom::pads::{IsPads, ReplacePad};
+	use crate::sercom::pads;
+	use crate::typelevel::NoneT;
+
+	struct Roles<RX: OptionalPad = NoneT, TX: OptionalPad = NoneT, CLK: OptionalPad = NoneT, RTS: OptionalPad = NoneT, CTS: OptionalPad = NoneT> (PhantomData<RX>, PhantomData<TX>, PhantomData<CLK>, PhantomData<RTS>, PhantomData<CTS>);
+	trait IsRoles {}
+	impl<RX: OptionalPad, TX: OptionalPad, CLK: OptionalPad, RTS: OptionalPad, CTS: OptionalPad> IsRoles for Roles<RX, TX, CLK, RTS, CTS> {}
+
+	impl Roles {
+		fn default() -> Self {
+			Roles(PhantomData, PhantomData, PhantomData, PhantomData, PhantomData)
+		}
+	}
+
+	trait ReplaceRx: IsRoles {
+		type NewRoles<I: IsPad>: IsRoles;
+		fn replace_rx<I: IsPad>(self) -> Self::NewRoles<I>;
+	}
+	impl<TX: OptionalPad, CLK: OptionalPad, RTS: OptionalPad, CTS: OptionalPad> ReplaceRx for Roles<NoneT, TX, CLK, RTS, CTS> {
+		type NewRoles<I: IsPad> = Roles<I, TX, CLK, RTS, CTS>;
+		fn replace_rx<I: IsPad>(self) -> Self::NewRoles<I> {
+			Roles(PhantomData::<I>, self.1, self.2, self.3, self.4)
+		}
+	}
+
+	trait ReplaceTx: IsRoles {
+		type NewRoles<I: IsPad>: IsRoles;
+		fn replace_tx<I: IsPad>(self) -> Self::NewRoles<I>;
+	}
+	impl<RX: OptionalPad, CLK: OptionalPad, RTS: OptionalPad, CTS: OptionalPad> ReplaceTx for Roles<RX, NoneT, CLK, RTS, CTS> {
+		type NewRoles<I: IsPad> = Roles<RX, I, CLK, RTS, CTS>;
+		fn replace_tx<I: IsPad>(self) -> Self::NewRoles<I> {
+			Roles(self.0, PhantomData::<I>, self.2, self.3, self.4)
+		}
+	}
+
+	struct Pads<S: Sercom, P: IsPads = pads::Pads<NoneT, NoneT, NoneT, NoneT>, R: IsRoles = Roles<NoneT, NoneT, NoneT, NoneT, NoneT>> {
+		sercom: S,
+		pads: P,
+		roles: R,
+	}
+
+	impl<S: Sercom> Pads<S> {
+		fn default(sercom: S) -> Self {
+			Pads {
+				sercom,
+				pads: pads::Pads::default(),
+				roles: Roles::default(),
+			}
+		}
+	}
+
+	impl<S: Sercom, P: IsPads, R: IsRoles> Pads<S, P, R> {
+		fn rx<I: IsPad>(self, pin: I) -> Pads<S, <P as ReplacePad<I::PadNum>>::NewPads<I>, <R as ReplaceRx>::NewRoles<I>> where P: ReplacePad<I::PadNum>, R: ReplaceRx {
+			Pads {
+				sercom: self.sercom,
+				pads: self.pads.replace(pin),
+				roles: self.roles.replace_rx::<I>(),
+			}
+		}
+		fn tx<I: IsPad>(self, pin: I) -> Pads<S, <P as ReplacePad<I::PadNum>>::NewPads<I>, <R as ReplaceTx>::NewRoles<I>> where P: ReplacePad<I::PadNum>, R: ReplaceTx {
+			Pads {
+				sercom: self.sercom,
+				pads: self.pads.replace(pin),
+				roles: self.roles.replace_tx::<I>(),
+			}
+		}
+	}
+
+	use crate::gpio::{AlternateC, PA16, PA17, Pin};
+	use crate::sercom::Sercom1;
+
+	fn test(sercom: Sercom1, p1: Pin<PA16, AlternateC>, p2: Pin<PA17, AlternateC>) {
+		let uart = Pads::default(sercom).rx(p1).tx(p2);
+	}
+}
+
 pub use pads::*;
 
 mod reg;
