@@ -52,7 +52,7 @@ macro_rules! pad_info {
             type PadNum = $PadNum;
         }
         impl IoSets for Pin<$PinId, Alternate<$Cfg>> {
-            type SetList = mk_hlist!($( <$IoSet as IoSet>::Order ),+);
+           type SetList = mk_hlist!($( <$IoSet as IoSet>::Order ),+);
         }
     };
 }

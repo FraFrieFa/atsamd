@@ -102,7 +102,7 @@ impl<N: PadNum> OptionalPadNum for N {}
 ///
 /// [type class]: crate::typelevel#type-classes
 /// [type-level function]: crate::typelevel#type-level-functions
-pub trait IsPad: AnyPin {
+pub trait IsPad: AnyPin + IoSets {
     type Sercom: Sercom;
     type PadNum: PadNum;
 }
@@ -127,7 +127,7 @@ pub trait IsI2cPad: IsPad {}
 /// See the [`OptionalKind`] documentation for more details on the pattern.
 ///
 /// [`OptionalKind`]: crate::typelevel#optionalkind-trait-pattern
-pub trait OptionalPad: OptionalPin {
+pub trait OptionalPad: OptionalPin + IoSets {
     type PadNum: OptionalPadNum;
 }
 
@@ -373,7 +373,7 @@ mod ioset {
 
     /// Type class for corresponding IoSet indices for OptionalPads, NoneT
     /// serves as a wildcard
-    pub trait IoSets: OptionalPad {
+    pub trait IoSets {
         type SetList: HList;
     }
 
