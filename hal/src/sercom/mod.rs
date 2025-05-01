@@ -45,6 +45,7 @@ use crate::dmac::TriggerSource;
 
 use crate::typelevel::Sealed;
 
+pub mod pads;
 pub mod pad;
 pub use pad::*;
 
