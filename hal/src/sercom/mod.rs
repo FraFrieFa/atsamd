@@ -45,8 +45,8 @@ use crate::dmac::TriggerSource;
 
 use crate::typelevel::Sealed;
 
-pub mod pads;
 pub mod pad;
+pub mod pads;
 pub use pad::*;
 
 pub mod i2c;

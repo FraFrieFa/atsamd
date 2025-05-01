@@ -524,19 +524,15 @@
 
 use atsamd_hal_macros::{hal_cfg, hal_module};
 
-#[hal_module(
-    any("sercom0-d11", "sercom0-d21") => "uart/pads_thumbv6m.rs",
-    "sercom0-d5x" => "uart/pads_thumbv7em.rs",
-)]
-mod pads {}
-
-mod newpads {
+mod pads {
 
     use crate::sercom::pads;
-    use crate::sercom::pads::{ReplacePad, ValidPads};
-    use crate::sercom::{IsPad, OptionalPad, Sercom};
-    use crate::typelevel::NoneT;
+    use crate::sercom::pads::{ReplacePad};
+    use crate::sercom::{IsPad, OptionalPad, Sercom, uart};
+    use crate::typelevel::{NoneT, Sealed};
     use core::marker::PhantomData;
+	use crate::sercom::uart::{AnyConfig, CharSize, Config, Capability};
+
 
     struct Roles<
         RX: OptionalPad = NoneT,
@@ -552,8 +548,13 @@ mod newpads {
         PhantomData<CTS>,
     );
     trait IsRoles {}
-    impl<RX: OptionalPad, TX: OptionalPad, CLK: OptionalPad, RTS: OptionalPad, CTS: OptionalPad>
-        IsRoles for Roles<RX, TX, CLK, RTS, CTS>
+    impl<
+            RX: OptionalPad,
+            TX: OptionalPad,
+            CLK: OptionalPad,
+            RTS: OptionalPad,
+            CTS: OptionalPad,
+        > IsRoles for Roles<RX, TX, CLK, RTS, CTS>
     {
     }
 
@@ -632,7 +633,7 @@ mod newpads {
         }
     }
 
-    struct Pads<P: ValidPads, R: IsRoles = Roles<NoneT, NoneT, NoneT, NoneT, NoneT>> {
+    struct Pads<P: pads::ValidPads, R: IsRoles = Roles<NoneT, NoneT, NoneT, NoneT, NoneT>> {
         pads: P,
         roles: R,
     }
@@ -646,12 +647,12 @@ mod newpads {
         }
     }
 
-    impl<P: ValidPads, R: IsRoles> Pads<P, R> {
+    impl<P: pads::ValidPads, R: IsRoles> Pads<P, R> {
         fn rx<I: IsPad>(self, pin: I) -> Pads<P::NewPads, R::NewRoles<I>>
         where
             P: ReplacePad<I>,
             R: ReplaceRole<Rx>,
-            P::NewPads: ValidPads,
+            P::NewPads: pads::ValidPads,
         {
             Pads {
                 pads: self.pads.replace(pin),
@@ -662,7 +663,7 @@ mod newpads {
         where
             P: ReplacePad<I>,
             R: ReplaceRole<Tx>,
-            P::NewPads: ValidPads,
+            P::NewPads: pads::ValidPads,
         {
             Pads {
                 pads: self.pads.replace(pin),
@@ -677,7 +678,7 @@ mod newpads {
             P: ReplacePad<I>,
             R: ReplaceRole<Rx>,
             R::NewRoles<I>: ReplaceRole<Tx>,
-            P::NewPads: ValidPads,
+            P::NewPads: pads::ValidPads,
         {
             Pads {
                 pads: self.pads.replace(pin),
@@ -688,7 +689,7 @@ mod newpads {
         where
             P: ReplacePad<I>,
             R: ReplaceRole<Clk>,
-            P::NewPads: ValidPads,
+            P::NewPads: pads::ValidPads,
         {
             Pads {
                 pads: self.pads.replace(pin),
@@ -697,12 +698,123 @@ mod newpads {
         }
     }
 
-    use crate::gpio::{AlternateC, PA12, PA16, PA17, Pin};
-    use crate::sercom::Sercom1;
+    use crate::sercom::{Pad0, Pad1, Pad2, Pad3};
 
-    fn test(sercom: Sercom1, p1: Pin<PA16, AlternateC>, p2: Pin<PA17, AlternateC>, p3: Pin<PA12, AlternateC>) {
-        let uart = Pads::default(sercom).rx(p1).tx(p2);
+    trait Rxpo {
+        const RXPO: u8;
     }
+    impl Rxpo for NoneT {
+        const RXPO: u8 = 0;
+    }
+    impl Rxpo for Pad0 {
+        const RXPO: u8 = 0;
+    }
+    impl Rxpo for Pad1 {
+        const RXPO: u8 = 1;
+    }
+    impl Rxpo for Pad2 {
+        const RXPO: u8 = 2;
+    }
+    impl Rxpo for Pad3 {
+        const RXPO: u8 = 3;
+    }
+
+    trait Txpo {
+        const TXPO: u8;
+    }
+    impl Txpo for (NoneT, NoneT, NoneT, NoneT) {
+        const TXPO: u8 = 0;
+    }
+    impl Txpo for (NoneT, Pad1, NoneT, NoneT) {
+        const TXPO: u8 = 0;
+    }
+    impl Txpo for (Pad0, NoneT, NoneT, NoneT) {
+        const TXPO: u8 = 0;
+    }
+    impl Txpo for (Pad0, Pad1, NoneT, NoneT) {
+        const TXPO: u8 = 0;
+    }
+
+    impl Txpo for (NoneT, NoneT, NoneT, Pad3) {
+        const TXPO: u8 = 2;
+    }
+    impl Txpo for (Pad0, NoneT, NoneT, Pad3) {
+        const TXPO: u8 = 2;
+    }
+    impl Txpo for (NoneT, NoneT, Pad2, Pad3) {
+        const TXPO: u8 = 2;
+    }
+    impl Txpo for (Pad0, NoneT, Pad2, Pad3) {
+        const TXPO: u8 = 2;
+    }
+
+    impl Txpo for (Pad0, NoneT, Pad2, NoneT) {
+        const TXPO: u8 = 3;
+    }
+    impl Txpo for (NoneT, NoneT, Pad2, NoneT) {
+        const TXPO: u8 = 3;
+    }
+    impl Txpo for (NoneT, Pad1, Pad2, NoneT) {
+        const TXPO: u8 = 3;
+    }
+    impl Txpo for (Pad0, Pad1, Pad2, NoneT) {
+        const TXPO: u8 = 3;
+    }
+
+	trait CapabilityRxTx {
+		type Capability: Capability;
+	}
+
+	impl<RX: IsPad> CapabilityRxTx for (RX, NoneT) {
+		type Capability = uart::Rx;
+	}
+	impl<TX: IsPad> CapabilityRxTx for (NoneT, TX) {
+		type Capability = uart::Tx;
+	}
+	impl<RX: IsPad, TX: IsPad> CapabilityRxTx for (RX, TX) {
+		type Capability = uart::Duplex;
+	}
+
+    pub trait ValidPads {
+    	const RXPO: u8;
+    	const TXPO: u8;
+		type Capability: Capability;
+		type Sercom: Sercom;
+		type CTS: OptionalPad;
+    }
+    
+    impl<
+            P: pads::ValidPads,
+            RX: OptionalPad,
+            TX: OptionalPad,
+            CLK: OptionalPad,
+            RTS: OptionalPad,
+            CTS: OptionalPad,
+        > ValidPads for Pads<P, Roles<RX, TX, CLK, RTS, CTS>>
+    where
+        RX: Rxpo,
+        (TX, CLK, RTS, CTS): Txpo,
+        (RX, TX): CapabilityRxTx,
+    {
+    	const RXPO: u8 = RX::RXPO;
+    	const TXPO: u8 = <(TX, CLK, RTS, CTS)>::TXPO;
+    	type Capability = <(RX, TX) as CapabilityRxTx>::Capability;
+    	type Sercom = P::Sercom;
+    	type CTS = CTS;
+    }
+
+	//=============================================================================
+	// ValidConfig
+	//=============================================================================
+
+	/// Marker trait for valid UART [`Config`]urations
+	///
+	/// A functional UART peripheral must have, at a minimum either a Rx or a Tx
+	/// [`Pad`].
+	pub trait ValidConfig: AnyConfig {}
+
+	impl<P: ValidPads, C: CharSize> ValidConfig for Config<P, C> {}
+
 }
 
 pub use pads::*;
@@ -1073,7 +1185,7 @@ where
 impl<C, D, R, T> Uart<C, D, R, T>
 where
     C: ValidConfig,
-    <C::Pads as PadSet>::Cts: SomePad,
+    <C::Pads as ValidPads>::CTS: SomePad,
     D: Transmit,
 {
     /// Clear the `CTSIC` interrupt flag
