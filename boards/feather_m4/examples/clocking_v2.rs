@@ -25,7 +25,7 @@ use atsamd_hal::{
 
 use rtic::app;
 
-type Pads = uart::PadsFromIds<Sercom0, PA05, PA04>;
+type Pads = uart::PadsFromPinsRxTx<Sercom0, PA05, PA04>;
 type Uart = uart::Uart<uart::Config<Pads>, uart::Duplex>;
 
 #[app(device = atsamd_hal::pac)]
@@ -124,7 +124,9 @@ mod app {
 
         use atsamd_hal::sercom::uart;
 
-        let pads = uart::Pads::default().rx(pins.pa05).tx(pins.pa04);
+        let pads = uart::Pads::default()
+            .rx(pins.pa05.into())
+            .tx(pins.pa04.into());
         // In the future, the `Uart` will take ownership of the `Pclk` and will
         // take an `ApbClk` instead of `&MCLK`
         let mut uart = uart::Config::new(&mclk, device.sercom0, pads, pclk_sercom0.freq())

@@ -1,27 +1,32 @@
 use crate::sercom::*;
 use crate::typelevel::NoneT;
 
+use core::marker::PhantomData;
+
 //==============================================================================
 // Pads
 //==============================================================================
 
-pub struct Pads<S: Sercom, P0: OptionalPad, P1: OptionalPad, P2: OptionalPad, P3: OptionalPad>(
-    S,
-    P0,
-    P1,
-    P2,
-    P3,
-);
+pub struct Pads<
+    S: Sercom,
+    P0: OptionalPad = NoneT,
+    P1: OptionalPad = NoneT,
+    P2: OptionalPad = NoneT,
+    P3: OptionalPad = NoneT,
+>(PhantomData<S>, P0, P1, P2, P3);
 
-pub trait IsPads {}
+pub trait IsPads {
+    type Sercom: Sercom;
+}
 impl<S: Sercom, P0: OptionalPad, P1: OptionalPad, P2: OptionalPad, P3: OptionalPad> IsPads
     for Pads<S, P0, P1, P2, P3>
 {
+    type Sercom = S;
 }
 
 impl<S: Sercom> Pads<S, NoneT, NoneT, NoneT, NoneT> {
-    pub fn default(sercom: S) -> Self {
-        Pads(sercom, NoneT, NoneT, NoneT, NoneT)
+    pub fn default() -> Self {
+        Pads(PhantomData, NoneT, NoneT, NoneT, NoneT)
     }
 }
 
@@ -89,19 +94,15 @@ impl<
     }
 }
 
-pub trait HasSercom {
-	type Sercom: Sercom;
-}
+pub trait ValidPads: IsPads {}
 
-pub trait ValidPads: HasSercom {}
-
-impl<S: Sercom, P0: OptionalPad, P1: OptionalPad, P2: OptionalPad, P3: OptionalPad> HasSercom
+#[hal_cfg(any("sercom0-d11", "sercom0-d21"))]
+impl<S: Sercom, P0: OptionalPad, P1: OptionalPad, P2: OptionalPad, P3: OptionalPad> ValidPads
     for Pads<S, P0, P1, P2, P3>
-where
 {
-	type Sercom = S;
 }
 
+#[hal_cfg("sercom0-d5x")]
 impl<S: Sercom, P0: OptionalPad, P1: OptionalPad, P2: OptionalPad, P3: OptionalPad> ValidPads
     for Pads<S, P0, P1, P2, P3>
 where
