@@ -86,6 +86,7 @@ pub mod prelude;
 pub mod rtc;
 #[cfg(feature = "device")]
 pub mod sercom;
+pub mod sercom_v2;
 pub mod sleeping_delay;
 pub mod time;
 pub mod timer_params;
