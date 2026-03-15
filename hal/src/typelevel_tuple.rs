@@ -37,6 +37,20 @@ impl<T> Field<Present, T> {
         let Field(value, _) = self;
         value.expect("field must be present")
     }
+
+    /// Take ownership of the contained value via a mutable reference.
+    pub fn take_mut(&mut self) -> T {
+        self.0
+            .take()
+            .expect("called take_mut on a present field without value")
+    }
+
+    /// Borrow the contained value by reference.
+    pub fn get_ref(&self) -> &T {
+        self.0
+            .as_ref()
+            .expect("called get_ref on a present field without value")
+    }
 }
 
 impl<T> Field<Absent, T> {

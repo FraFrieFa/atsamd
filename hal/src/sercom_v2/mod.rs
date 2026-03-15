@@ -43,7 +43,7 @@
 //! [`PB03`]: crate::gpio::pin::PB03
 //! [`IsI2cPad`]: pad::IsI2cPad
 
-use atsamd_hal_macros::{hal_cfg, TypeLevelTuple};
+use atsamd_hal_macros::{TypeLevelTuple, hal_cfg};
 use core::marker::PhantomData;
 
 use crate::pac;
@@ -410,6 +410,16 @@ pub trait PacTupleApb {
     fn take_apb(self) -> (ApbClkCtrl, Self::AfterApb);
 }
 
+/// Helper trait that extracts a SERCOM core clock proof from a type-level PAC tuple.
+pub trait PacTupleSercomCoreClock<S: Sercom> {
+    /// Concrete clock proof/type returned by the tuple.
+    type Clock: SercomCoreClock<S>;
+    /// Tuple state after removing the clock field, if any.
+    type AfterClock;
+
+    fn take_sercom_core_clock(self) -> (Self::Clock, Self::AfterClock);
+}
+
 pub trait IntoPeriphV2 {
     type Tuple;
 
@@ -436,6 +446,50 @@ struct PeriphV2Sercom3 {
     mclk: crate::pac::Mclk,
 }
 
+/// Convert `Peripherals` plus a clock::v2 SERCOM3 `Pclk` into a type-level
+/// tuple that can be consumed by `enable_from_pac_auto`.
+#[hal_cfg(all("sercom3-d5x", "clock-d5x"))]
+pub trait IntoPeriphV2ClockedSercom3 {
+    type Tuple;
+
+    fn into_periphv2_clocked_sercom3(
+        self,
+        sercom3_pclk: crate::clock::v2::pclk::Pclk<
+            crate::sercom::Sercom3,
+            crate::clock::v2::gclk::Gclk0Id,
+        >,
+    ) -> Self::Tuple;
+}
+
+#[hal_cfg(all("sercom3-d5x", "clock-d5x"))]
+impl IntoPeriphV2ClockedSercom3 for crate::pac::Peripherals {
+    type Tuple = PeriphV2Sercom3ClockedTuple;
+
+    fn into_periphv2_clocked_sercom3(
+        self,
+        sercom3_pclk: crate::clock::v2::pclk::Pclk<
+            crate::sercom::Sercom3,
+            crate::clock::v2::gclk::Gclk0Id,
+        >,
+    ) -> Self::Tuple {
+        PeriphV2Sercom3Clocked {
+            sercom3: self.sercom3,
+            mclk: self.mclk,
+            sercom3_pclk,
+        }
+        .into_tuple()
+    }
+}
+
+#[hal_cfg(all("sercom3-d5x", "clock-d5x"))]
+#[derive(TypeLevelTuple)]
+struct PeriphV2Sercom3Clocked {
+    sercom3: crate::pac::Sercom3,
+    mclk: crate::pac::Mclk,
+    sercom3_pclk:
+        crate::clock::v2::pclk::Pclk<crate::sercom::Sercom3, crate::clock::v2::gclk::Gclk0Id>,
+}
+
 #[hal_cfg("sercom3-d5x")]
 impl<MclkState> PacTupleSercom<Sercom3>
     for PeriphV2Sercom3Tuple<crate::typelevel_tuple::Present, MclkState>
@@ -447,6 +501,33 @@ impl<MclkState> PacTupleSercom<Sercom3>
     }
 }
 
+#[hal_cfg(all("sercom3-d5x", "clock-d5x"))]
+impl<MclkState, ClockState> PacTupleSercom<Sercom3>
+    for PeriphV2Sercom3ClockedTuple<crate::typelevel_tuple::Present, MclkState, ClockState>
+{
+    type AfterSercom =
+        PeriphV2Sercom3ClockedTuple<crate::typelevel_tuple::Absent, MclkState, ClockState>;
+
+    fn take_sercom(self) -> (Sercom3, Self::AfterSercom) {
+        self.take_sercom3()
+    }
+}
+
+#[hal_cfg(all("sercom3-d5x", "clock-d5x"))]
+impl<SercomState, MclkState> PacTupleSercomCoreClock<Sercom3>
+    for PeriphV2Sercom3ClockedTuple<SercomState, MclkState, crate::typelevel_tuple::Present>
+{
+    type Clock =
+        crate::clock::v2::pclk::Pclk<crate::sercom::Sercom3, crate::clock::v2::gclk::Gclk0Id>;
+    type AfterClock =
+        PeriphV2Sercom3ClockedTuple<SercomState, MclkState, crate::typelevel_tuple::Absent>;
+
+    #[inline]
+    fn take_sercom_core_clock(self) -> (Self::Clock, Self::AfterClock) {
+        self.take_sercom3_pclk()
+    }
+}
+
 #[hal_cfg("sercom3-d5x")]
 impl<SercomState> PacTupleApb
     for PeriphV2Sercom3Tuple<SercomState, crate::typelevel_tuple::Present>
@@ -455,6 +536,51 @@ impl<SercomState> PacTupleApb
 
     fn take_apb(self) -> (ApbClkCtrl, Self::AfterApb) {
         self.take_mclk()
+    }
+}
+
+#[hal_cfg(all("sercom3-d5x", "clock-d5x"))]
+impl<SercomState, ClockState> PacTupleApb
+    for PeriphV2Sercom3ClockedTuple<SercomState, crate::typelevel_tuple::Present, ClockState>
+{
+    type AfterApb =
+        PeriphV2Sercom3ClockedTuple<SercomState, crate::typelevel_tuple::Absent, ClockState>;
+
+    fn take_apb(self) -> (ApbClkCtrl, Self::AfterApb) {
+        self.take_mclk()
+    }
+}
+
+#[hal_cfg(all("sercom3-d5x", "clock-d5x"))]
+impl<MclkState, ClockState> TakeSercom<Sercom3>
+    for PeriphV2Sercom3ClockedTuple<crate::typelevel_tuple::Present, MclkState, ClockState>
+{
+    #[inline]
+    fn take_sercom(&mut self) -> Sercom3 {
+        self.sercom3.take_mut()
+    }
+}
+
+#[hal_cfg(all("sercom3-d5x", "clock-d5x"))]
+impl<SercomState, MclkState> TakeSercomCoreClock<Sercom3>
+    for PeriphV2Sercom3ClockedTuple<SercomState, MclkState, crate::typelevel_tuple::Present>
+{
+    type Clock =
+        crate::clock::v2::pclk::Pclk<crate::sercom::Sercom3, crate::clock::v2::gclk::Gclk0Id>;
+
+    #[inline]
+    fn take_sercom_core_clock(&mut self) -> Self::Clock {
+        self.sercom3_pclk.take_mut()
+    }
+}
+
+#[hal_cfg(all("sercom3-d5x", "clock-d5x"))]
+impl<SercomState, ClockState> HasApbClkCtrl
+    for PeriphV2Sercom3ClockedTuple<SercomState, crate::typelevel_tuple::Present, ClockState>
+{
+    #[inline]
+    fn apb_clk_ctrl(&self) -> &ApbClkCtrl {
+        self.mclk.get_ref()
     }
 }
 

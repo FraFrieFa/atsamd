@@ -25,7 +25,8 @@ use sorted_hlist::{HCons, HList, IntersectUnchecked, NonEmptyHList, mk_hlist};
 
 use crate::gpio::{Pin, PinId, PinMode};
 use crate::sercom_v2::{
-    IsPad, OptionalPad, Pad0, Pad1, Pad2, Pad3, PacTupleApb, PacTupleSercom, Sercom, SercomCoreClock,
+    IsPad, OptionalPad, PacTupleApb, PacTupleSercom, PacTupleSercomCoreClock, Pad0, Pad1, Pad2,
+    Pad3, Sercom, SercomCoreClock,
 };
 #[cfg(any(
     feature = "samd21e",
@@ -487,6 +488,47 @@ pub trait CapabilityFlags {
     const TX: bool;
 }
 
+/// Marker trait for clock types that prove a valid USART channel clock.
+///
+/// This intentionally excludes plain scalar frequencies like `u32`.
+pub trait UsartClockChannel<S: Sercom>: SercomCoreClock<S> {}
+
+/// Marker trait for SERCOM clock channels sourced from a specific GCLK `Id`.
+pub trait UsartClockFromGclk<S: Sercom, G>: UsartClockChannel<S> {}
+
+#[hal_cfg(any("sercom0-d11", "sercom0-d21", "sercom0-d5x"))]
+impl UsartClockChannel<crate::sercom_v2::Sercom0> for crate::clock::Sercom0CoreClock {}
+#[hal_cfg(any("sercom1-d11", "sercom1-d21", "sercom1-d5x"))]
+impl UsartClockChannel<crate::sercom_v2::Sercom1> for crate::clock::Sercom1CoreClock {}
+#[hal_cfg(any("sercom2-d11", "sercom2-d21", "sercom2-d5x"))]
+impl UsartClockChannel<crate::sercom_v2::Sercom2> for crate::clock::Sercom2CoreClock {}
+#[hal_cfg(any("sercom3-d21", "sercom3-d5x"))]
+impl UsartClockChannel<crate::sercom_v2::Sercom3> for crate::clock::Sercom3CoreClock {}
+#[hal_cfg(any("sercom4-d21", "sercom4-d5x"))]
+impl UsartClockChannel<crate::sercom_v2::Sercom4> for crate::clock::Sercom4CoreClock {}
+#[hal_cfg(any("sercom5-d21", "sercom5-d5x"))]
+impl UsartClockChannel<crate::sercom_v2::Sercom5> for crate::clock::Sercom5CoreClock {}
+#[hal_cfg("sercom6-d5x")]
+impl UsartClockChannel<crate::sercom_v2::Sercom6> for crate::clock::Sercom6CoreClock {}
+#[hal_cfg("sercom7-d5x")]
+impl UsartClockChannel<crate::sercom_v2::Sercom7> for crate::clock::Sercom7CoreClock {}
+
+#[hal_cfg("clock-d5x")]
+impl<S, I> UsartClockChannel<S> for crate::clock::v2::pclk::Pclk<S, I>
+where
+    S: Sercom + crate::clock::v2::pclk::PclkId,
+    I: crate::clock::v2::pclk::PclkSourceId,
+{
+}
+
+#[hal_cfg("clock-d5x")]
+impl<S, G> UsartClockFromGclk<S, G> for crate::clock::v2::pclk::Pclk<S, G>
+where
+    S: Sercom + crate::clock::v2::pclk::PclkId,
+    G: crate::clock::v2::pclk::PclkSourceId,
+{
+}
+
 impl CapabilityFlags for Rx {
     const RX: bool = true;
     const TX: bool = false;
@@ -524,13 +566,21 @@ fn calculate_baud_asynchronous_arithm(baudrate: u32, clk_freq: u32, n_samples: u
     baud_calculated as u16
 }
 
+#[inline]
+fn assert_usart_clock_hz_nonzero(clock_hz: u32) {
+    assert!(
+        clock_hz > 0,
+        "USART clock channel frequency must be > 0"
+    );
+}
+
 impl<S, Pads, Clock, Dma, Irqs>
     UsartConfig<S, super::Disabled, UsartResources<Pads, Clock, Dma, Irqs>, UsartRuntime>
 where
     S: Sercom,
     Pads: ValidPads<Sercom = S>,
     Pads::Capability: CapabilityFlags,
-    Clock: SercomCoreClock<S>,
+    Clock: UsartClockChannel<S>,
 {
     /// Configure and enable a basic asynchronous USART mode (8N1).
     ///
@@ -543,6 +593,7 @@ where
         apb: &super::ApbClkCtrl,
     ) -> BasicUsart<S, Pads::Capability, Pads, Clock, Dma, Irqs> {
         let core_clock_hz = self.resources.clock.freq_hz();
+        assert_usart_clock_hz_nonzero(core_clock_hz);
         sercom.enable_apb_clock(apb);
         let usart = usart(&sercom);
 
@@ -686,6 +737,7 @@ where
     ) -> BasicUsart<S, Pads::Capability, Pads, <R as TakeSercomCoreClock<S>>::Clock, Dma, Irqs>
     where
         R: TakeSercom<S> + TakeSercomCoreClock<S> + HasApbClkCtrl,
+        <R as TakeSercomCoreClock<S>>::Clock: UsartClockChannel<S>,
     {
         let sercom = resources.take_sercom();
         let clock = resources.take_sercom_core_clock();
@@ -702,24 +754,35 @@ where
         config.enable_basic(sercom, &apb)
     }
 
-    /// Materialize an ephemeral USART config directly from type-level PAC
-    /// resources without manually extracting `sercomX` fields.
-    pub fn enable_from_pac<Clock, Pac>(
+    /// Materialize an ephemeral USART config by extracting SERCOM, APB and
+    /// a typed SERCOM-core clock channel from a type-level PAC tuple.
+    ///
+    /// This path intentionally requires an explicit clock-channel proof in
+    /// `pac`; no implicit frequency fallback is accepted.
+    pub fn enable_from_pac<Pac>(
         self,
         pac: Pac,
-        core_clock: Clock,
-    ) -> BasicUsart<S, Pads::Capability, Pads, Clock, Dma, Irqs>
+    ) -> BasicUsart<
+        S,
+        Pads::Capability,
+        Pads,
+        <Pac::AfterSercom as PacTupleSercomCoreClock<S>>::Clock,
+        Dma,
+        Irqs,
+    >
     where
         Pac: PacTupleSercom<S>,
-        Pac::AfterSercom: PacTupleApb,
-        Clock: SercomCoreClock<S>,
+        Pac::AfterSercom: PacTupleSercomCoreClock<S>,
+        <Pac::AfterSercom as PacTupleSercomCoreClock<S>>::Clock: UsartClockChannel<S>,
+        <Pac::AfterSercom as PacTupleSercomCoreClock<S>>::AfterClock: PacTupleApb,
     {
         let (sercom, pac) = pac.take_sercom();
+        let (clock, pac) = pac.take_sercom_core_clock();
         let (apb, _) = pac.take_apb();
         let config = UsartConfig::new(
             UsartResources {
                 pads: self.resources.pads,
-                clock: core_clock,
+                clock,
                 dma: self.resources.dma,
                 irqs: self.resources.irqs,
             },
@@ -1209,7 +1272,12 @@ impl AutoUsartBuilder {
 
 impl Usart {
     #[inline]
-    pub fn default() -> AutoUsartBuilder {
+    pub fn reset_config() -> AutoUsartBuilder {
+        AutoUsartBuilder::default()
+    }
+
+    #[inline]
+    pub fn new() -> AutoUsartBuilder {
         AutoUsartBuilder::default()
     }
 }
@@ -1300,6 +1368,11 @@ impl<RX, TX, CLK, RTS, CTS> AutoUsartBuilder<RX, TX, CLK, RTS, CTS> {
         self
     }
 
+    pub fn baud_const<const BAUD: u32>(mut self) -> Self {
+        self.runtime.baud = Some(BAUD);
+        self
+    }
+
     pub fn dord(mut self, dord: bool) -> Self {
         self.runtime.dord = Some(dord);
         self
@@ -1314,6 +1387,8 @@ impl<RX, TX, CLK, RTS, CTS> AutoUsartBuilder<RX, TX, CLK, RTS, CTS> {
 impl<RX, TX, CLK, RTS, CTS> AutoUsartBuilder<RX, TX, CLK, RTS, CTS>
 where
     FirstValid: AutoUsartPads<RX, TX, CLK, RTS, CTS>,
+    <<FirstValid as AutoUsartPads<RX, TX, CLK, RTS, CTS>>::Pads as ValidPads>::Capability:
+        CapabilityFlags,
 {
     /// Resolve pins with the default "first valid mapping" policy and keep
     /// clock ownership external until `enable_from`.
@@ -1337,27 +1412,32 @@ where
         UsartConfig::new(resources, self.runtime)
     }
 
-    /// Resolve pins with the default "first valid mapping" policy.
-    pub fn to_config_first(
+    /// Resolve pins and directly enable USART from mutable PacV2-style
+    /// resources using a selected GCLK source `Id`.
+    #[hal_cfg("clock-d5x")]
+    pub fn enable<C, R>(
         self,
-        clock_hz: u32,
-    ) -> UsartConfig<
+        resources: &mut R,
+        gclk: &C,
+    ) -> BasicUsart<
         <FirstValid as AutoUsartPads<RX, TX, CLK, RTS, CTS>>::Sercom,
-        super::Disabled,
-        UsartResources<<FirstValid as AutoUsartPads<RX, TX, CLK, RTS, CTS>>::Pads, u32>,
-        UsartRuntime,
-    > {
-        let pads = <FirstValid as AutoUsartPads<RX, TX, CLK, RTS, CTS>>::into_pads(
-            self.rx, self.tx, self.clk, self.rts, self.cts,
-        );
-        let resources = UsartResources {
-            pads,
-            clock: clock_hz,
-            dma: (),
-            irqs: (),
-        };
-        UsartConfig::new(resources, self.runtime)
+        <<FirstValid as AutoUsartPads<RX, TX, CLK, RTS, CTS>>::Pads as ValidPads>::Capability,
+        <FirstValid as AutoUsartPads<RX, TX, CLK, RTS, CTS>>::Pads,
+        <R as TakeSercomCoreClock<<FirstValid as AutoUsartPads<RX, TX, CLK, RTS, CTS>>::Sercom>>::Clock,
+    >
+    where
+        C: crate::clock::v2::Source,
+        R: TakeSercom<<FirstValid as AutoUsartPads<RX, TX, CLK, RTS, CTS>>::Sercom>
+            + TakeSercomCoreClock<<FirstValid as AutoUsartPads<RX, TX, CLK, RTS, CTS>>::Sercom>
+            + HasApbClkCtrl,
+        <R as TakeSercomCoreClock<<FirstValid as AutoUsartPads<RX, TX, CLK, RTS, CTS>>::Sercom>>::Clock:
+            UsartClockFromGclk<<FirstValid as AutoUsartPads<RX, TX, CLK, RTS, CTS>>::Sercom, C::Id>,
+    {
+        let _ = gclk;
+        let config = self.to_config();
+        config.enable_from(resources)
     }
+
 }
 
 #[cfg(any(
