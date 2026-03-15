@@ -18,6 +18,7 @@ pub use embedded_io_async;
 pub use rtic_time;
 
 pub mod typelevel;
+pub mod typelevel_tuple;
 mod util;
 
 macro_rules! define_pac {

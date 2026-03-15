@@ -71,8 +71,12 @@ fn spi_enable_basic_path_is_type_checked() {
         Config,
         crate::sercom_v2::Sercom0,
         &crate::sercom_v2::ApbClkCtrl,
-    ) -> super::BasicSpi<crate::sercom_v2::Sercom0, super::Duplex, TestPads, u32> =
-        Config::enable_basic;
+    ) -> super::BasicSpi<
+        crate::sercom_v2::Sercom0,
+        super::Duplex,
+        TestPads,
+        u32,
+    > = Config::enable_basic;
 }
 
 struct TestResourceProvider;
@@ -109,6 +113,10 @@ fn spi_enable_from_resource_provider_is_type_checked() {
     let _enable_from: fn(
         Config,
         &mut TestResourceProvider,
-    ) -> super::BasicSpi<crate::sercom_v2::Sercom0, super::Duplex, TestPads, u32> =
-        Config::enable_from::<TestResourceProvider>;
+    ) -> super::BasicSpi<
+        crate::sercom_v2::Sercom0,
+        super::Duplex,
+        TestPads,
+        u32,
+    > = Config::enable_from::<TestResourceProvider>;
 }

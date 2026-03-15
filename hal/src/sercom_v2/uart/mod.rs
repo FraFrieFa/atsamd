@@ -24,7 +24,9 @@ use atsamd_hal_macros::hal_cfg;
 use sorted_hlist::{HCons, HList, IntersectUnchecked, NonEmptyHList, mk_hlist};
 
 use crate::gpio::{Pin, PinId, PinMode};
-use crate::sercom_v2::{IsPad, OptionalPad, Pad0, Pad1, Pad2, Pad3, Sercom, SercomCoreClock};
+use crate::sercom_v2::{
+    IsPad, OptionalPad, Pad0, Pad1, Pad2, Pad3, PacTupleApb, PacTupleSercom, Sercom, SercomCoreClock,
+};
 #[cfg(any(
     feature = "samd21e",
     feature = "samd21g",
@@ -48,10 +50,7 @@ use crate::typelevel::NoneT;
 
 use super::pads;
 use super::pads::{IsPadSet, ReplacePad};
-use super::{
-    HasApbClkCtrl, PacApbAccess, PacTakeSercom, ResourceSet, StateMarker, TakeSercom,
-    TakeSercomCoreClock,
-};
+use super::{HasApbClkCtrl, ResourceSet, StateMarker, TakeSercom, TakeSercomCoreClock};
 
 #[hal_cfg(any("sercom0-d11", "sercom0-d21"))]
 use crate::pac::sercom0::usart::ctrla::Modeselect;
@@ -122,13 +121,13 @@ pub struct Roles<
 
 pub trait IsRoles {}
 
-impl<RX: OptionalPad, TX: OptionalPad, CLK: OptionalPad, RTS: OptionalPad, CTS: OptionalPad>
-    IsRoles for Roles<RX, TX, CLK, RTS, CTS>
+impl<RX: OptionalPad, TX: OptionalPad, CLK: OptionalPad, RTS: OptionalPad, CTS: OptionalPad> IsRoles
+    for Roles<RX, TX, CLK, RTS, CTS>
 {
 }
 
-impl<RX: OptionalPad, TX: OptionalPad, CLK: OptionalPad, RTS: OptionalPad, CTS: OptionalPad>
-    Default for Roles<RX, TX, CLK, RTS, CTS>
+impl<RX: OptionalPad, TX: OptionalPad, CLK: OptionalPad, RTS: OptionalPad, CTS: OptionalPad> Default
+    for Roles<RX, TX, CLK, RTS, CTS>
 {
     fn default() -> Self {
         Self(
@@ -347,7 +346,15 @@ trait Txpo {
     const TXPO: u8;
 }
 
-#[cfg(any(feature = "samd11c", feature = "samd11d", feature = "samd21e", feature = "samd21g", feature = "samd21j", feature = "samd21gl", feature = "samd21el"))]
+#[cfg(any(
+    feature = "samd11c",
+    feature = "samd11d",
+    feature = "samd21e",
+    feature = "samd21g",
+    feature = "samd21j",
+    feature = "samd21gl",
+    feature = "samd21el"
+))]
 super::pads::impl_const! {
     trait = Txpo;
     field = const TXPO: u8;
@@ -366,7 +373,19 @@ super::pads::impl_const! {
     (Pad0, NoneT, Pad2, Pad3) => 2,
 }
 
-#[cfg(any(feature = "samd51g", feature = "samd51j", feature = "samd51n", feature = "samd51p", feature = "same51g", feature = "same51j", feature = "same51n", feature = "same53j", feature = "same53n", feature = "same54n", feature = "same54p"))]
+#[cfg(any(
+    feature = "samd51g",
+    feature = "samd51j",
+    feature = "samd51n",
+    feature = "samd51p",
+    feature = "same51g",
+    feature = "same51j",
+    feature = "same51n",
+    feature = "same53j",
+    feature = "same53n",
+    feature = "same54n",
+    feature = "same54p"
+))]
 super::pads::impl_const! {
     trait = Txpo;
     field = const TXPO: u8;
@@ -408,16 +427,31 @@ impl<RX: IsPad, TX: IsPad> CapabilityOf for (RX, TX) {
     type Capability = Duplex;
 }
 
-impl<P: pads::ValidPads, RX: OptionalPad, TX: OptionalPad, CLK: OptionalPad, RTS: OptionalPad, CTS: OptionalPad>
-    ValidPads for InternalPads<P, Roles<RX, TX, CLK, RTS, CTS>>
+impl<
+    P: pads::ValidPads,
+    RX: OptionalPad,
+    TX: OptionalPad,
+    CLK: OptionalPad,
+    RTS: OptionalPad,
+    CTS: OptionalPad,
+> ValidPads for InternalPads<P, Roles<RX, TX, CLK, RTS, CTS>>
 where
     <RX as OptionalPad>::PadNum: Rxpo,
-    (<TX as OptionalPad>::PadNum, <CLK as OptionalPad>::PadNum, <RTS as OptionalPad>::PadNum, <CTS as OptionalPad>::PadNum): Txpo,
+    (
+        <TX as OptionalPad>::PadNum,
+        <CLK as OptionalPad>::PadNum,
+        <RTS as OptionalPad>::PadNum,
+        <CTS as OptionalPad>::PadNum,
+    ): Txpo,
     (RX, TX): CapabilityOf,
 {
     const RXPO: u8 = <RX as OptionalPad>::PadNum::RXPO;
-    const TXPO: u8 =
-        <(<TX as OptionalPad>::PadNum, <CLK as OptionalPad>::PadNum, <RTS as OptionalPad>::PadNum, <CTS as OptionalPad>::PadNum)>::TXPO;
+    const TXPO: u8 = <(
+        <TX as OptionalPad>::PadNum,
+        <CLK as OptionalPad>::PadNum,
+        <RTS as OptionalPad>::PadNum,
+        <CTS as OptionalPad>::PadNum,
+    )>::TXPO;
     type Capability = <(RX, TX) as CapabilityOf>::Capability;
     type Sercom = P::Sercom;
     type CTS = CTS;
@@ -441,8 +475,7 @@ pub struct PadRouting<Rxpo = (), Txpo = (), Clk = (), Cts = ()>(
 );
 
 /// Minimal enabled USART peripheral for the first end-to-end vertical slice.
-pub struct BasicUsart<S: Sercom, Capability, Pads = InternalPads, Clock = (), Dma = (), Irqs = ()>
-{
+pub struct BasicUsart<S: Sercom, Capability, Pads = InternalPads, Clock = (), Dma = (), Irqs = ()> {
     sercom: S,
     resources: UsartResources<Pads, Clock, Dma, Irqs>,
     runtime: UsartRuntime,
@@ -553,16 +586,18 @@ where
             usart.ctrlb().modify(|_, w| w.colden().bit(colden));
         }
         if let Some(threshold) = self.runtime.start_of_frame_threshold {
-            usart
-                .rxpl()
-                .write(|w| unsafe { w.rxpl().bits(threshold) });
+            usart.rxpl().write(|w| unsafe { w.rxpl().bits(threshold) });
         }
 
         let sampr = self.runtime.sampr.unwrap_or(0);
-        usart.ctrla().modify(|_, w| unsafe { w.sampr().bits(sampr) });
+        usart
+            .ctrla()
+            .modify(|_, w| unsafe { w.sampr().bits(sampr) });
 
         if let Some(sampa) = self.runtime.sampa {
-            usart.ctrla().modify(|_, w| unsafe { w.sampa().bits(sampa) });
+            usart
+                .ctrla()
+                .modify(|_, w| unsafe { w.sampa().bits(sampa) });
         }
 
         let oversampling = match sampr {
@@ -576,19 +611,39 @@ where
             .baud_usartfp_mode()
             .write(|w| unsafe { w.baud().bits(baud_reg) });
 
-        #[cfg(any(feature = "samd51g", feature = "samd51j", feature = "samd51n", feature = "samd51p", feature = "same51g", feature = "same51j", feature = "same51n", feature = "same53j", feature = "same53n", feature = "same54n", feature = "same54p"))]
+        #[cfg(any(
+            feature = "samd51g",
+            feature = "samd51j",
+            feature = "samd51n",
+            feature = "samd51p",
+            feature = "same51g",
+            feature = "same51j",
+            feature = "same51n",
+            feature = "same53j",
+            feature = "same53n",
+            feature = "same54n",
+            feature = "same54p"
+        ))]
         {
             if let Some(gtime) = self.runtime.gtime {
-                usart.ctrlc().modify(|_, w| unsafe { w.gtime().bits(gtime) });
+                usart
+                    .ctrlc()
+                    .modify(|_, w| unsafe { w.gtime().bits(gtime) });
             }
             if let Some(brklen) = self.runtime.brklen {
-                usart.ctrlc().modify(|_, w| unsafe { w.brklen().bits(brklen) });
+                usart
+                    .ctrlc()
+                    .modify(|_, w| unsafe { w.brklen().bits(brklen) });
             }
             if let Some(hdrdly) = self.runtime.hdrdly {
-                usart.ctrlc().modify(|_, w| unsafe { w.hdrdly().bits(hdrdly) });
+                usart
+                    .ctrlc()
+                    .modify(|_, w| unsafe { w.hdrdly().bits(hdrdly) });
             }
             if let Some(maxiter) = self.runtime.maxiter {
-                usart.ctrlc().modify(|_, w| unsafe { w.maxiter().bits(maxiter) });
+                usart
+                    .ctrlc()
+                    .modify(|_, w| unsafe { w.maxiter().bits(maxiter) });
             }
             if let Some(inack) = self.runtime.inack {
                 usart.ctrlc().modify(|_, w| w.inack().bit(inack));
@@ -644,22 +699,23 @@ where
             },
             self.runtime,
         );
-        config.enable_basic(sercom, apb)
+        config.enable_basic(sercom, &apb)
     }
 
-    /// Materialize an ephemeral USART config directly from PAC peripherals
-    /// without manually extracting `sercomX` fields.
-    pub fn enable_from_pac<Clock>(
+    /// Materialize an ephemeral USART config directly from type-level PAC
+    /// resources without manually extracting `sercomX` fields.
+    pub fn enable_from_pac<Clock, Pac>(
         self,
-        peripherals: &crate::pac::Peripherals,
+        pac: Pac,
         core_clock: Clock,
     ) -> BasicUsart<S, Pads::Capability, Pads, Clock, Dma, Irqs>
     where
-        crate::pac::Peripherals: PacTakeSercom<S> + PacApbAccess,
+        Pac: PacTupleSercom<S>,
+        Pac::AfterSercom: PacTupleApb,
         Clock: SercomCoreClock<S>,
     {
-        let sercom = <crate::pac::Peripherals as PacTakeSercom<S>>::pac_take_sercom(peripherals);
-        let apb = <crate::pac::Peripherals as PacApbAccess>::pac_apb(peripherals);
+        let (sercom, pac) = pac.take_sercom();
+        let (apb, _) = pac.take_apb();
         let config = UsartConfig::new(
             UsartResources {
                 pads: self.resources.pads,
@@ -669,11 +725,13 @@ where
             },
             self.runtime,
         );
-        config.enable_basic(sercom, apb)
+        config.enable_basic(sercom, &apb)
     }
 }
 
-impl<S: Sercom, Capability, Pads, Clock, Dma, Irqs> BasicUsart<S, Capability, Pads, Clock, Dma, Irqs> {
+impl<S: Sercom, Capability, Pads, Clock, Dma, Irqs>
+    BasicUsart<S, Capability, Pads, Clock, Dma, Irqs>
+{
     #[inline]
     pub fn free(self) -> (S, UsartResources<Pads, Clock, Dma, Irqs>, UsartRuntime) {
         (self.sercom, self.resources, self.runtime)
@@ -685,7 +743,9 @@ impl<S: Sercom, Pads, Clock, Dma, Irqs> BasicUsart<S, Tx, Pads, Clock, Dma, Irqs
     pub fn write_u8(&mut self, byte: u8) {
         let usart = usart(&self.sercom);
         while usart.intflag().read().dre().bit_is_clear() {}
-        usart.data().write(|w| unsafe { w.data().bits(byte.into()) });
+        usart
+            .data()
+            .write(|w| unsafe { w.data().bits(byte.into()) });
     }
 }
 
@@ -703,7 +763,9 @@ impl<S: Sercom, Pads, Clock, Dma, Irqs> BasicUsart<S, Duplex, Pads, Clock, Dma, 
     pub fn write_u8(&mut self, byte: u8) {
         let usart = usart(&self.sercom);
         while usart.intflag().read().dre().bit_is_clear() {}
-        usart.data().write(|w| unsafe { w.data().bits(byte.into()) });
+        usart
+            .data()
+            .write(|w| unsafe { w.data().bits(byte.into()) });
     }
 
     #[inline]
@@ -921,31 +983,145 @@ pub trait SercomFromOrder {
     type Sercom: Sercom + SercomOrder;
 }
 
-#[cfg(any(feature = "samd21e", feature = "samd21g", feature = "samd21j", feature = "samd21el", feature = "samd21gl", feature = "samd51g", feature = "samd51j", feature = "samd51n", feature = "samd51p", feature = "same51g", feature = "same51j", feature = "same51n", feature = "same53j", feature = "same53n", feature = "same54n", feature = "same54p"))]
+#[cfg(any(
+    feature = "samd21e",
+    feature = "samd21g",
+    feature = "samd21j",
+    feature = "samd21el",
+    feature = "samd21gl",
+    feature = "samd51g",
+    feature = "samd51j",
+    feature = "samd51n",
+    feature = "samd51p",
+    feature = "same51g",
+    feature = "same51j",
+    feature = "same51n",
+    feature = "same53j",
+    feature = "same53n",
+    feature = "same54n",
+    feature = "same54p"
+))]
 impl SercomFromOrder for typenum::U0 {
     type Sercom = crate::sercom_v2::Sercom0;
 }
-#[cfg(any(feature = "samd21e", feature = "samd21g", feature = "samd21j", feature = "samd21el", feature = "samd21gl", feature = "samd51g", feature = "samd51j", feature = "samd51n", feature = "samd51p", feature = "same51g", feature = "same51j", feature = "same51n", feature = "same53j", feature = "same53n", feature = "same54n", feature = "same54p"))]
+#[cfg(any(
+    feature = "samd21e",
+    feature = "samd21g",
+    feature = "samd21j",
+    feature = "samd21el",
+    feature = "samd21gl",
+    feature = "samd51g",
+    feature = "samd51j",
+    feature = "samd51n",
+    feature = "samd51p",
+    feature = "same51g",
+    feature = "same51j",
+    feature = "same51n",
+    feature = "same53j",
+    feature = "same53n",
+    feature = "same54n",
+    feature = "same54p"
+))]
 impl SercomFromOrder for typenum::U1 {
     type Sercom = crate::sercom_v2::Sercom1;
 }
-#[cfg(any(feature = "samd21e", feature = "samd21g", feature = "samd21j", feature = "samd21el", feature = "samd21gl", feature = "samd51g", feature = "samd51j", feature = "samd51n", feature = "samd51p", feature = "same51g", feature = "same51j", feature = "same51n", feature = "same53j", feature = "same53n", feature = "same54n", feature = "same54p"))]
+#[cfg(any(
+    feature = "samd21e",
+    feature = "samd21g",
+    feature = "samd21j",
+    feature = "samd21el",
+    feature = "samd21gl",
+    feature = "samd51g",
+    feature = "samd51j",
+    feature = "samd51n",
+    feature = "samd51p",
+    feature = "same51g",
+    feature = "same51j",
+    feature = "same51n",
+    feature = "same53j",
+    feature = "same53n",
+    feature = "same54n",
+    feature = "same54p"
+))]
 impl SercomFromOrder for typenum::U2 {
     type Sercom = crate::sercom_v2::Sercom2;
 }
-#[cfg(any(feature = "samd21e", feature = "samd21g", feature = "samd21j", feature = "samd21el", feature = "samd21gl", feature = "samd51g", feature = "samd51j", feature = "samd51n", feature = "samd51p", feature = "same51g", feature = "same51j", feature = "same51n", feature = "same53j", feature = "same53n", feature = "same54n", feature = "same54p"))]
+#[cfg(any(
+    feature = "samd21e",
+    feature = "samd21g",
+    feature = "samd21j",
+    feature = "samd21el",
+    feature = "samd21gl",
+    feature = "samd51g",
+    feature = "samd51j",
+    feature = "samd51n",
+    feature = "samd51p",
+    feature = "same51g",
+    feature = "same51j",
+    feature = "same51n",
+    feature = "same53j",
+    feature = "same53n",
+    feature = "same54n",
+    feature = "same54p"
+))]
 impl SercomFromOrder for typenum::U3 {
     type Sercom = crate::sercom_v2::Sercom3;
 }
-#[cfg(any(feature = "samd21e", feature = "samd21g", feature = "samd21j", feature = "samd21el", feature = "samd21gl", feature = "samd51g", feature = "samd51j", feature = "samd51n", feature = "samd51p", feature = "same51g", feature = "same51j", feature = "same51n", feature = "same53j", feature = "same53n", feature = "same54n", feature = "same54p"))]
+#[cfg(any(
+    feature = "samd21e",
+    feature = "samd21g",
+    feature = "samd21j",
+    feature = "samd21el",
+    feature = "samd21gl",
+    feature = "samd51g",
+    feature = "samd51j",
+    feature = "samd51n",
+    feature = "samd51p",
+    feature = "same51g",
+    feature = "same51j",
+    feature = "same51n",
+    feature = "same53j",
+    feature = "same53n",
+    feature = "same54n",
+    feature = "same54p"
+))]
 impl SercomFromOrder for typenum::U4 {
     type Sercom = crate::sercom_v2::Sercom4;
 }
-#[cfg(any(feature = "samd21e", feature = "samd21g", feature = "samd21j", feature = "samd21el", feature = "samd21gl", feature = "samd51g", feature = "samd51j", feature = "samd51n", feature = "samd51p", feature = "same51g", feature = "same51j", feature = "same51n", feature = "same53j", feature = "same53n", feature = "same54n", feature = "same54p"))]
+#[cfg(any(
+    feature = "samd21e",
+    feature = "samd21g",
+    feature = "samd21j",
+    feature = "samd21el",
+    feature = "samd21gl",
+    feature = "samd51g",
+    feature = "samd51j",
+    feature = "samd51n",
+    feature = "samd51p",
+    feature = "same51g",
+    feature = "same51j",
+    feature = "same51n",
+    feature = "same53j",
+    feature = "same53n",
+    feature = "same54n",
+    feature = "same54p"
+))]
 impl SercomFromOrder for typenum::U5 {
     type Sercom = crate::sercom_v2::Sercom5;
 }
-#[cfg(any(feature = "samd51g", feature = "samd51j", feature = "samd51n", feature = "samd51p", feature = "same51g", feature = "same51j", feature = "same51n", feature = "same53j", feature = "same53n", feature = "same54n", feature = "same54p"))]
+#[cfg(any(
+    feature = "samd51g",
+    feature = "samd51j",
+    feature = "samd51n",
+    feature = "samd51p",
+    feature = "same51g",
+    feature = "same51j",
+    feature = "same51n",
+    feature = "same53j",
+    feature = "same53n",
+    feature = "same54n",
+    feature = "same54p"
+))]
 #[hal_cfg("sercom6-d5x")]
 impl SercomFromOrder for typenum::U6 {
     type Sercom = crate::sercom_v2::Sercom6;
@@ -999,7 +1175,6 @@ where
         CTS::Sercoms,
     >>::Output as Head>::Head as SercomFromOrder>::Sercom;
 }
-
 
 /// Builder accepting unconfigured GPIO pins and producing typed USART config.
 #[derive(Debug)]
@@ -1142,18 +1317,16 @@ where
 {
     /// Resolve pins with the default "first valid mapping" policy and keep
     /// clock ownership external until `enable_from`.
-    pub fn to_config(self) -> UsartConfig<
+    pub fn to_config(
+        self,
+    ) -> UsartConfig<
         <FirstValid as AutoUsartPads<RX, TX, CLK, RTS, CTS>>::Sercom,
         super::Disabled,
         UsartResources<<FirstValid as AutoUsartPads<RX, TX, CLK, RTS, CTS>>::Pads, ()>,
         UsartRuntime,
     > {
         let pads = <FirstValid as AutoUsartPads<RX, TX, CLK, RTS, CTS>>::into_pads(
-            self.rx,
-            self.tx,
-            self.clk,
-            self.rts,
-            self.cts,
+            self.rx, self.tx, self.clk, self.rts, self.cts,
         );
         let resources = UsartResources {
             pads,
@@ -1175,11 +1348,7 @@ where
         UsartRuntime,
     > {
         let pads = <FirstValid as AutoUsartPads<RX, TX, CLK, RTS, CTS>>::into_pads(
-            self.rx,
-            self.tx,
-            self.clk,
-            self.rts,
-            self.cts,
+            self.rx, self.tx, self.clk, self.rts, self.cts,
         );
         let resources = UsartResources {
             pads,
@@ -1209,7 +1378,8 @@ where
     feature = "same54n",
     feature = "same54p"
 ))]
-type AutoSercom<RX, TX, CLK, RTS, CTS> = <FirstValid as ResolveUsartSercom<RX, TX, CLK, RTS, CTS>>::Sercom;
+type AutoSercom<RX, TX, CLK, RTS, CTS> =
+    <FirstValid as ResolveUsartSercom<RX, TX, CLK, RTS, CTS>>::Sercom;
 
 #[cfg(any(
     feature = "samd21e",
@@ -1229,7 +1399,8 @@ type AutoSercom<RX, TX, CLK, RTS, CTS> = <FirstValid as ResolveUsartSercom<RX, T
     feature = "same54n",
     feature = "same54p"
 ))]
-type AutoPad<RX, TX, CLK, RTS, CTS, I> = crate::sercom_v2::Pad<AutoSercom<RX, TX, CLK, RTS, CTS>, I>;
+type AutoPad<RX, TX, CLK, RTS, CTS, I> =
+    crate::sercom_v2::Pad<AutoSercom<RX, TX, CLK, RTS, CTS>, I>;
 
 #[cfg(any(
     feature = "samd21e",
@@ -1365,7 +1536,7 @@ impl_auto_usart_case! {
         resolve = (RXI, TXI, NoneT, NoneT, CTSI);
         getpad = [RXI, TXI, CTSI];
         pinmode = [RXM, TXM, CTSM];
-        
+
         rxpo = <crate::sercom_v2::Pad<<FirstValid as ResolveUsartSercom<RXI, TXI, NoneT, NoneT, CTSI>>::Sercom, RXI> as IsPad>::PadNum;
         txpo = (
             <crate::sercom_v2::Pad<<FirstValid as ResolveUsartSercom<RXI, TXI, NoneT, NoneT, CTSI>>::Sercom, TXI> as IsPad>::PadNum,
@@ -1434,7 +1605,7 @@ impl_auto_usart_case! {
         resolve = (RXI, TXI, CLKI, RTSI, NoneT);
         getpad = [RXI, TXI, CLKI, RTSI];
         pinmode = [RXM, TXM, CLKM, RTSM];
-        
+
         rxpo = <crate::sercom_v2::Pad<<FirstValid as ResolveUsartSercom<RXI, TXI, CLKI, RTSI, NoneT>>::Sercom, RXI> as IsPad>::PadNum;
         txpo = (
             <crate::sercom_v2::Pad<<FirstValid as ResolveUsartSercom<RXI, TXI, CLKI, RTSI, NoneT>>::Sercom, TXI> as IsPad>::PadNum,
@@ -1506,7 +1677,7 @@ impl_auto_usart_case! {
         resolve = (RXI, TXI, CLKI, NoneT, CTSI);
         getpad = [RXI, TXI, CLKI, CTSI];
         pinmode = [RXM, TXM, CLKM, CTSM];
-        
+
         rxpo = <crate::sercom_v2::Pad<<FirstValid as ResolveUsartSercom<RXI, TXI, CLKI, NoneT, CTSI>>::Sercom, RXI> as IsPad>::PadNum;
         txpo = (
             <crate::sercom_v2::Pad<<FirstValid as ResolveUsartSercom<RXI, TXI, CLKI, NoneT, CTSI>>::Sercom, TXI> as IsPad>::PadNum,
@@ -1578,7 +1749,7 @@ impl_auto_usart_case! {
         resolve = (RXI, TXI, NoneT, RTSI, CTSI);
         getpad = [RXI, TXI, RTSI, CTSI];
         pinmode = [RXM, TXM, RTSM, CTSM];
-        
+
         rxpo = <crate::sercom_v2::Pad<<FirstValid as ResolveUsartSercom<RXI, TXI, NoneT, RTSI, CTSI>>::Sercom, RXI> as IsPad>::PadNum;
         txpo = (
             <crate::sercom_v2::Pad<<FirstValid as ResolveUsartSercom<RXI, TXI, NoneT, RTSI, CTSI>>::Sercom, TXI> as IsPad>::PadNum,

@@ -30,10 +30,16 @@ use proc_macro::{Delimiter, Group, Ident, Literal, Punct, Spacing, Span, TokenSt
 mod error;
 mod generation;
 mod parsing;
+mod typelevel_tuple_derive;
 
 use error::Error;
 use generation::{add_cfgs_to_input, cfg_args, gen_cfgs, hal_expr_to_devices};
 use parsing::{eat_attribute, eat_eof, eat_group, eat_hal_expr, eat_operator, eat_string_literal};
+
+#[proc_macro_derive(TypeLevelTuple)]
+pub fn type_level_tuple(input: TokenStream) -> TokenStream {
+    typelevel_tuple_derive::type_level_tuple(input)
+}
 
 /// Attribute macro which expands to a suitable `#[cfg(...)]` expression.
 ///

@@ -1,12 +1,12 @@
 //! I2C baseline for the unified SERCOM foundation.
 
-use core::marker::PhantomData;
 use atsamd_hal_macros::hal_cfg;
+use core::marker::PhantomData;
 
 use crate::sercom_v2::pads::{self, IsPadSet, ReplacePad};
 use crate::sercom_v2::{
-    HasApbClkCtrl, IsI2cPad, IsPad, OptionalPad, Pad0, Pad1, ResourceSet, Sercom,
-    SercomCoreClock, StateMarker, TakeSercom, TakeSercomCoreClock,
+    HasApbClkCtrl, IsI2cPad, IsPad, OptionalPad, Pad0, Pad1, ResourceSet, Sercom, SercomCoreClock,
+    StateMarker, TakeSercom, TakeSercomCoreClock,
 };
 use crate::typelevel::NoneT;
 
@@ -46,10 +46,12 @@ type AddRole<P, R, NP> = InternalPads<
     <<P as IsPadSet>::Roles as ReplaceRole<R>>::NewRoles<NP>,
 >;
 
-pub type Pads<SDA = NoneT, SCL = NoneT> =
-    AddRole<AddRole<DefaultPads, SdaRole, SDA>, SclRole, SCL>;
+pub type Pads<SDA = NoneT, SCL = NoneT> = AddRole<AddRole<DefaultPads, SdaRole, SDA>, SclRole, SCL>;
 
-pub struct Roles<SDA: OptionalPad = NoneT, SCL: OptionalPad = NoneT>(PhantomData<SDA>, PhantomData<SCL>);
+pub struct Roles<SDA: OptionalPad = NoneT, SCL: OptionalPad = NoneT>(
+    PhantomData<SDA>,
+    PhantomData<SCL>,
+);
 
 pub trait IsRoles {}
 
@@ -71,11 +73,15 @@ pub trait ReplaceRole<R> {
 
 impl<SCL: OptionalPad> ReplaceRole<SdaRole> for Roles<NoneT, SCL> {
     type NewRoles<I: OptionalPad> = Roles<I, SCL>;
-    fn replace<I: OptionalPad>(self) -> Self::NewRoles<I> { Roles(PhantomData, PhantomData) }
+    fn replace<I: OptionalPad>(self) -> Self::NewRoles<I> {
+        Roles(PhantomData, PhantomData)
+    }
 }
 impl<SDA: OptionalPad> ReplaceRole<SclRole> for Roles<SDA, NoneT> {
     type NewRoles<I: OptionalPad> = Roles<SDA, I>;
-    fn replace<I: OptionalPad>(self) -> Self::NewRoles<I> { Roles(PhantomData, PhantomData) }
+    fn replace<I: OptionalPad>(self) -> Self::NewRoles<I> {
+        Roles(PhantomData, PhantomData)
+    }
 }
 
 pub struct InternalPads<
@@ -189,11 +195,15 @@ where
         i2c.ctrla().write(|w| w.swrst().set_bit());
         while i2c.syncbusy().read().swrst().bit_is_set() {}
 
-        i2c.ctrla()
-            .modify(|_, w| w.mode().variant(crate::pac::sercom0::i2cm::ctrla::Modeselect::I2cMaster));
+        i2c.ctrla().modify(|_, w| {
+            w.mode()
+                .variant(crate::pac::sercom0::i2cm::ctrla::Modeselect::I2cMaster)
+        });
 
         let baud_hz = self.runtime.baud.unwrap_or(100_000).max(1);
-        let baud = (core_clock_hz / (2 * baud_hz)).saturating_sub(1).min(u8::MAX as u32) as u8;
+        let baud = (core_clock_hz / (2 * baud_hz))
+            .saturating_sub(1)
+            .min(u8::MAX as u32) as u8;
         i2c.baud().modify(|_, w| unsafe { w.baud().bits(baud) });
 
         if let Some(runstdby) = self.runtime.runstdby {

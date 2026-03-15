@@ -75,8 +75,12 @@ fn usart_enable_basic_path_is_type_checked() {
         Config,
         crate::sercom_v2::Sercom0,
         &crate::sercom_v2::ApbClkCtrl,
-    ) -> super::BasicUsart<crate::sercom_v2::Sercom0, super::Duplex, TestPads, u32> =
-        Config::enable_basic;
+    ) -> super::BasicUsart<
+        crate::sercom_v2::Sercom0,
+        super::Duplex,
+        TestPads,
+        u32,
+    > = Config::enable_basic;
 }
 
 struct TestResourceProvider;
@@ -113,8 +117,12 @@ fn usart_enable_from_resource_provider_is_type_checked() {
     let _enable_from: fn(
         Config,
         &mut TestResourceProvider,
-    ) -> super::BasicUsart<crate::sercom_v2::Sercom0, super::Duplex, TestPads, u32> =
-        Config::enable_from::<TestResourceProvider>;
+    ) -> super::BasicUsart<
+        crate::sercom_v2::Sercom0,
+        super::Duplex,
+        TestPads,
+        u32,
+    > = Config::enable_from::<TestResourceProvider>;
 }
 
 #[cfg(any(
@@ -207,12 +215,8 @@ fn auto_builder_rx_tx_enable_basic_path_is_type_checked() {
         >,
     >;
 
-    type ExpectedUsart = super::BasicUsart<
-        crate::sercom_v2::Sercom0,
-        super::Duplex,
-        ResolvedPads,
-        u32,
-    >;
+    type ExpectedUsart =
+        super::BasicUsart<crate::sercom_v2::Sercom0, super::Duplex, ResolvedPads, u32>;
 
     let _construct_and_enable: fn(
         Builder,
@@ -256,12 +260,8 @@ fn auto_builder_rx_tx_enable_from_is_type_checked() {
         >,
     >;
 
-    type ExpectedUsart = super::BasicUsart<
-        crate::sercom_v2::Sercom0,
-        super::Duplex,
-        ResolvedPads,
-        u32,
-    >;
+    type ExpectedUsart =
+        super::BasicUsart<crate::sercom_v2::Sercom0, super::Duplex, ResolvedPads, u32>;
 
     let _construct_and_enable_from: fn(Builder, &mut TestResourceProvider) -> ExpectedUsart =
         |builder, resources| builder.baud(115_200).to_config().enable_from(resources);
@@ -307,4 +307,52 @@ fn auto_builder_samd5x_three_pins_infers_sercom5() {
 
     let _map_fn: fn(Builder) -> ExpectedConfig =
         |builder| builder.baud(115_200).to_config_first(48_000_000);
+}
+
+#[cfg(any(
+    feature = "samd51g",
+    feature = "samd51j",
+    feature = "samd51n",
+    feature = "samd51p",
+    feature = "same51g",
+    feature = "same51j",
+    feature = "same51n",
+    feature = "same53j",
+    feature = "same53n",
+    feature = "same54n",
+    feature = "same54p"
+))]
+#[test]
+fn auto_builder_enable_from_pac_uses_periphv2_tuple_and_infers_sercom3() {
+    type Builder = super::AutoUsartBuilder<
+        crate::gpio::Pin<crate::gpio::PA23, crate::gpio::Reset>,
+        crate::gpio::Pin<crate::gpio::PA22, crate::gpio::Reset>,
+    >;
+
+    type ResolvedPads = super::InternalPads<
+        crate::sercom_v2::pads::Pads<
+            crate::sercom_v2::Pad<crate::sercom_v2::Sercom3, crate::gpio::PA23>,
+            crate::sercom_v2::Pad<crate::sercom_v2::Sercom3, crate::gpio::PA22>,
+            crate::typelevel::NoneT,
+            crate::typelevel::NoneT,
+        >,
+        super::Roles<
+            crate::sercom_v2::Pad<crate::sercom_v2::Sercom3, crate::gpio::PA23>,
+            crate::sercom_v2::Pad<crate::sercom_v2::Sercom3, crate::gpio::PA22>,
+            crate::typelevel::NoneT,
+            crate::typelevel::NoneT,
+            crate::typelevel::NoneT,
+        >,
+    >;
+
+    type ExpectedUsart =
+        super::BasicUsart<crate::sercom_v2::Sercom3, super::Duplex, ResolvedPads, u32>;
+
+    let _construct_and_enable_from_pac: fn(Builder, crate::pac::Peripherals) -> ExpectedUsart =
+        |builder, peripherals| {
+            builder.baud(115_200).to_config().enable_from_pac(
+                crate::sercom_v2::IntoPeriphV2::into_periphv2(peripherals),
+                48_000_000u32,
+            )
+        };
 }

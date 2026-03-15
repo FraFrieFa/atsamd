@@ -1,7 +1,7 @@
 //! SPI baseline for the unified SERCOM foundation.
 
-use core::marker::PhantomData;
 use atsamd_hal_macros::hal_cfg;
+use core::marker::PhantomData;
 
 use crate::sercom_v2::pads::{self, IsPadSet, ReplacePad};
 use crate::sercom_v2::{
@@ -49,7 +49,12 @@ type AddRole<P, R, NP> = InternalPads<
 pub type Pads<DI = NoneT, DO = NoneT, CK = NoneT, SS = NoneT> =
     AddRole<AddRole<AddRole<AddRole<DefaultPads, DiRole, DI>, DoRole, DO>, CkRole, CK>, SsRole, SS>;
 
-pub struct Roles<DI: OptionalPad = NoneT, DO: OptionalPad = NoneT, CK: OptionalPad = NoneT, SS: OptionalPad = NoneT>(
+pub struct Roles<
+    DI: OptionalPad = NoneT,
+    DO: OptionalPad = NoneT,
+    CK: OptionalPad = NoneT,
+    SS: OptionalPad = NoneT,
+>(
     PhantomData<DI>,
     PhantomData<DO>,
     PhantomData<CK>,
@@ -63,7 +68,9 @@ impl<DI: OptionalPad, DO: OptionalPad, CK: OptionalPad, SS: OptionalPad> IsRoles
 {
 }
 
-impl<DI: OptionalPad, DO: OptionalPad, CK: OptionalPad, SS: OptionalPad> Default for Roles<DI, DO, CK, SS> {
+impl<DI: OptionalPad, DO: OptionalPad, CK: OptionalPad, SS: OptionalPad> Default
+    for Roles<DI, DO, CK, SS>
+{
     fn default() -> Self {
         Self(PhantomData, PhantomData, PhantomData, PhantomData)
     }
@@ -79,21 +86,37 @@ pub trait ReplaceRole<R> {
     fn replace<I: OptionalPad>(self) -> Self::NewRoles<I>;
 }
 
-impl<DO: OptionalPad, CK: OptionalPad, SS: OptionalPad> ReplaceRole<DiRole> for Roles<NoneT, DO, CK, SS> {
+impl<DO: OptionalPad, CK: OptionalPad, SS: OptionalPad> ReplaceRole<DiRole>
+    for Roles<NoneT, DO, CK, SS>
+{
     type NewRoles<I: OptionalPad> = Roles<I, DO, CK, SS>;
-    fn replace<I: OptionalPad>(self) -> Self::NewRoles<I> { Roles(PhantomData, PhantomData, PhantomData, PhantomData) }
+    fn replace<I: OptionalPad>(self) -> Self::NewRoles<I> {
+        Roles(PhantomData, PhantomData, PhantomData, PhantomData)
+    }
 }
-impl<DI: OptionalPad, CK: OptionalPad, SS: OptionalPad> ReplaceRole<DoRole> for Roles<DI, NoneT, CK, SS> {
+impl<DI: OptionalPad, CK: OptionalPad, SS: OptionalPad> ReplaceRole<DoRole>
+    for Roles<DI, NoneT, CK, SS>
+{
     type NewRoles<I: OptionalPad> = Roles<DI, I, CK, SS>;
-    fn replace<I: OptionalPad>(self) -> Self::NewRoles<I> { Roles(PhantomData, PhantomData, PhantomData, PhantomData) }
+    fn replace<I: OptionalPad>(self) -> Self::NewRoles<I> {
+        Roles(PhantomData, PhantomData, PhantomData, PhantomData)
+    }
 }
-impl<DI: OptionalPad, DO: OptionalPad, SS: OptionalPad> ReplaceRole<CkRole> for Roles<DI, DO, NoneT, SS> {
+impl<DI: OptionalPad, DO: OptionalPad, SS: OptionalPad> ReplaceRole<CkRole>
+    for Roles<DI, DO, NoneT, SS>
+{
     type NewRoles<I: OptionalPad> = Roles<DI, DO, I, SS>;
-    fn replace<I: OptionalPad>(self) -> Self::NewRoles<I> { Roles(PhantomData, PhantomData, PhantomData, PhantomData) }
+    fn replace<I: OptionalPad>(self) -> Self::NewRoles<I> {
+        Roles(PhantomData, PhantomData, PhantomData, PhantomData)
+    }
 }
-impl<DI: OptionalPad, DO: OptionalPad, CK: OptionalPad> ReplaceRole<SsRole> for Roles<DI, DO, CK, NoneT> {
+impl<DI: OptionalPad, DO: OptionalPad, CK: OptionalPad> ReplaceRole<SsRole>
+    for Roles<DI, DO, CK, NoneT>
+{
     type NewRoles<I: OptionalPad> = Roles<DI, DO, CK, I>;
-    fn replace<I: OptionalPad>(self) -> Self::NewRoles<I> { Roles(PhantomData, PhantomData, PhantomData, PhantomData) }
+    fn replace<I: OptionalPad>(self) -> Self::NewRoles<I> {
+        Roles(PhantomData, PhantomData, PhantomData, PhantomData)
+    }
 }
 
 pub struct InternalPads<
@@ -190,7 +213,15 @@ trait Dopo {
     const DOPO: u8;
 }
 
-#[cfg(any(feature = "samd11c", feature = "samd11d", feature = "samd21e", feature = "samd21g", feature = "samd21j", feature = "samd21gl", feature = "samd21el"))]
+#[cfg(any(
+    feature = "samd11c",
+    feature = "samd11d",
+    feature = "samd21e",
+    feature = "samd21g",
+    feature = "samd21j",
+    feature = "samd21gl",
+    feature = "samd21el"
+))]
 crate::sercom_v2::pads::impl_const! {
     trait = Dopo;
     field = const DOPO: u8;
@@ -204,7 +235,19 @@ crate::sercom_v2::pads::impl_const! {
     (Pad0, Pad3, NoneT, NoneT) => 0,
 }
 
-#[cfg(any(feature = "samd51g", feature = "samd51j", feature = "samd51n", feature = "samd51p", feature = "same51g", feature = "same51j", feature = "same51n", feature = "same53j", feature = "same53n", feature = "same54n", feature = "same54p"))]
+#[cfg(any(
+    feature = "samd51g",
+    feature = "samd51j",
+    feature = "samd51n",
+    feature = "samd51p",
+    feature = "same51g",
+    feature = "same51j",
+    feature = "same51n",
+    feature = "same53j",
+    feature = "same53n",
+    feature = "same54n",
+    feature = "same54p"
+))]
 crate::sercom_v2::pads::impl_const! {
     trait = Dopo;
     field = const DOPO: u8;
@@ -246,7 +289,12 @@ impl<DI: OptionalPad, DO: OptionalPad, CK: OptionalPad, SS: OptionalPad, P: pads
     ValidPads for InternalPads<P, Roles<DI, DO, CK, SS>>
 where
     <DI as OptionalPad>::PadNum: Dipo,
-    (<DO as OptionalPad>::PadNum, <CK as OptionalPad>::PadNum, <SS as OptionalPad>::PadNum, NoneT): Dopo,
+    (
+        <DO as OptionalPad>::PadNum,
+        <CK as OptionalPad>::PadNum,
+        <SS as OptionalPad>::PadNum,
+        NoneT,
+    ): Dopo,
     (DI, DO): CapabilityOf,
 {
     type Sercom = P::Sercom;
@@ -254,7 +302,12 @@ where
     type SS = SS;
     const DIPO_DOPO: (u8, u8) = (
         <DI as OptionalPad>::PadNum::DIPO,
-        <(<DO as OptionalPad>::PadNum, <CK as OptionalPad>::PadNum, <SS as OptionalPad>::PadNum, NoneT)>::DOPO,
+        <(
+            <DO as OptionalPad>::PadNum,
+            <CK as OptionalPad>::PadNum,
+            <SS as OptionalPad>::PadNum,
+            NoneT,
+        )>::DOPO,
     );
 }
 
@@ -352,8 +405,7 @@ where
             spi.ctrlb().modify(|_, w| w.mssen().bit(mssen));
         }
         if let Some(preload_enable) = self.runtime.preload_enable {
-            spi.ctrlb()
-                .modify(|_, w| w.ploaden().bit(preload_enable));
+            spi.ctrlb().modify(|_, w| w.ploaden().bit(preload_enable));
         }
         if let Some(ssde) = self.runtime.ssde {
             spi.ctrlb().modify(|_, w| w.ssde().bit(ssde));
@@ -362,13 +414,26 @@ where
             spi.ctrlb().modify(|_, w| unsafe { w.amode().bits(amode) });
         }
 
-        #[cfg(any(feature = "samd51g", feature = "samd51j", feature = "samd51n", feature = "samd51p", feature = "same51g", feature = "same51j", feature = "same51n", feature = "same53j", feature = "same53n", feature = "same54n", feature = "same54p"))]
+        #[cfg(any(
+            feature = "samd51g",
+            feature = "samd51j",
+            feature = "samd51n",
+            feature = "samd51p",
+            feature = "same51g",
+            feature = "same51j",
+            feature = "same51n",
+            feature = "same53j",
+            feature = "same53n",
+            feature = "same54n",
+            feature = "same54p"
+        ))]
         {
             if let Some(data32b) = self.runtime.data32b {
                 spi.ctrlc().modify(|_, w| w.data32b().bit(data32b));
             }
             if let Some(icspace) = self.runtime.icspace {
-                spi.ctrlc().modify(|_, w| unsafe { w.icspace().bits(icspace) });
+                spi.ctrlc()
+                    .modify(|_, w| unsafe { w.icspace().bits(icspace) });
             }
             if let Some(length) = self.runtime.length {
                 spi.length().write(|w| unsafe {
@@ -380,7 +445,9 @@ where
         }
 
         let baud_hz = self.runtime.baud.unwrap_or(1_000_000).max(1);
-        let baud_bits = (core_clock_hz / 2 / baud_hz).saturating_sub(1).min(u8::MAX as u32) as u8;
+        let baud_bits = (core_clock_hz / 2 / baud_hz)
+            .saturating_sub(1)
+            .min(u8::MAX as u32) as u8;
         spi.baud().write(|w| unsafe { w.baud().bits(baud_bits) });
 
         spi.ctrlb()
@@ -431,7 +498,9 @@ where
     }
 }
 
-impl<S: Sercom, Capability, Pads, Clock, Dma, Irqs> BasicSpi<S, Capability, Pads, Clock, Dma, Irqs> {
+impl<S: Sercom, Capability, Pads, Clock, Dma, Irqs>
+    BasicSpi<S, Capability, Pads, Clock, Dma, Irqs>
+{
     pub fn free(self) -> (S, SpiResources<Pads, Clock, Dma, Irqs>, SpiRuntime) {
         (self.sercom, self.resources, self.runtime)
     }

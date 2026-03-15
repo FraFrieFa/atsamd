@@ -43,7 +43,7 @@
 //! [`PB03`]: crate::gpio::pin::PB03
 //! [`IsI2cPad`]: pad::IsI2cPad
 
-use atsamd_hal_macros::hal_cfg;
+use atsamd_hal_macros::{hal_cfg, TypeLevelTuple};
 use core::marker::PhantomData;
 
 use crate::pac;
@@ -394,6 +394,70 @@ pub trait PacApbAccess {
     fn pac_apb(&self) -> &ApbClkCtrl;
 }
 
+/// Helper trait that extracts a SERCOM peripheral from a type-level PAC tuple.
+pub trait PacTupleSercom<S: Sercom> {
+    /// Tuple state after removing the SERCOM field.
+    type AfterSercom;
+
+    fn take_sercom(self) -> (S, Self::AfterSercom);
+}
+
+/// Helper trait that extracts the APB clock controller from a type-level PAC tuple.
+pub trait PacTupleApb {
+    /// Tuple state after removing the APB field.
+    type AfterApb;
+
+    fn take_apb(self) -> (ApbClkCtrl, Self::AfterApb);
+}
+
+pub trait IntoPeriphV2 {
+    type Tuple;
+
+    fn into_periphv2(self) -> Self::Tuple;
+}
+
+#[hal_cfg("sercom3-d5x")]
+impl IntoPeriphV2 for crate::pac::Peripherals {
+    type Tuple = PeriphV2Sercom3Tuple;
+
+    fn into_periphv2(self) -> Self::Tuple {
+        PeriphV2Sercom3 {
+            sercom3: self.sercom3,
+            mclk: self.mclk,
+        }
+        .into_tuple()
+    }
+}
+
+#[hal_cfg("sercom3-d5x")]
+#[derive(TypeLevelTuple)]
+struct PeriphV2Sercom3 {
+    sercom3: crate::pac::Sercom3,
+    mclk: crate::pac::Mclk,
+}
+
+#[hal_cfg("sercom3-d5x")]
+impl<MclkState> PacTupleSercom<Sercom3>
+    for PeriphV2Sercom3Tuple<crate::typelevel_tuple::Present, MclkState>
+{
+    type AfterSercom = PeriphV2Sercom3Tuple<crate::typelevel_tuple::Absent, MclkState>;
+
+    fn take_sercom(self) -> (Sercom3, Self::AfterSercom) {
+        self.take_sercom3()
+    }
+}
+
+#[hal_cfg("sercom3-d5x")]
+impl<SercomState> PacTupleApb
+    for PeriphV2Sercom3Tuple<SercomState, crate::typelevel_tuple::Present>
+{
+    type AfterApb = PeriphV2Sercom3Tuple<SercomState, crate::typelevel_tuple::Absent>;
+
+    fn take_apb(self) -> (ApbClkCtrl, Self::AfterApb) {
+        self.take_mclk()
+    }
+}
+
 #[hal_cfg("clock-d5x")]
 impl PacApbAccess for crate::pac::Peripherals {
     #[inline]
@@ -452,7 +516,9 @@ where
 
     #[inline]
     fn take_sercom_core_clock(&mut self) -> Self::Clock {
-        self.core_clock.take().expect("SERCOM core clock already taken")
+        self.core_clock
+            .take()
+            .expect("SERCOM core clock already taken")
     }
 }
 
